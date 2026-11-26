@@ -12,7 +12,7 @@ mcp-server/   Official MCP Python SDK — exposes JobPilot to Claude and other M
 ```
 
 Read next: [ARCHITECTURE.md](ARCHITECTURE.md) · [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) (PRD audit & acceptance)
-· [RELEASE_READINESS_V1_1.md](RELEASE_READINESS_V1_1.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)
+· [RELEASE_READINESS_V1_2.md](RELEASE_READINESS_V1_2.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)
 · [SECURITY.md](SECURITY.md) · [TESTING.md](TESTING.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Quick start (local)
@@ -77,7 +77,7 @@ non-loopback binding is refused).
 ## Tests
 
 ```bash
-cd backend && uv run pytest                      # 99 tests (2 need Redis); see TESTING.md for PostgreSQL/Redis mode
+cd backend && uv run pytest                      # 103 tests (2 need Redis); see TESTING.md for PostgreSQL/Redis mode
 cd mcp-server && uv run pytest                   # 7 tests
 cd frontend && npm test                          # 21 unit/component tests (Vitest)
 cd frontend && npx playwright test               # 16 E2E + axe + CSP tests (needs API + web running)

@@ -237,3 +237,39 @@ def test_production_rejects_placeholder_secret_keys():
         with pytest.raises(ValidationError, match="SECRET_KEY"):
             Settings(secret_key=weak, **ok)
     Settings(secret_key="Zq7xW2pL9vR4tY8uK3mN6bH1cJ5dF0gS-eA_" + "x9", **ok)
+
+
+def test_client_ip_uses_trusted_hops_and_ignores_spoofed_entries(monkeypatch):
+    from starlette.requests import Request
+
+    from app.api.deps import client_ip
+    from app.config import get_settings
+
+    def req(xff):
+        headers = [(b"x-forwarded-for", xff.encode())] if xff is not None else []
+        return Request({"type": "http", "headers": headers, "client": ("10.0.0.5", 1234)})
+
+    s = get_settings()
+    monkeypatch.setattr(s, "trusted_proxy_hops", 0)
+    assert client_ip(req("6.6.6.6")) == "10.0.0.5"  # header ignored by default
+    monkeypatch.setattr(s, "trusted_proxy_hops", 1)
+    assert client_ip(req("6.6.6.6, 203.0.113.7")) == "203.0.113.7"  # client-supplied prefix ignored
+    assert client_ip(req("203.0.113.7")) == "203.0.113.7"
+    assert client_ip(req(None)) == "10.0.0.5"  # didn't come through the proxy → TCP peer
+    monkeypatch.setattr(s, "trusted_proxy_hops", 2)
+    assert client_ip(req("6.6.6.6, 203.0.113.7, 10.1.1.1")) == "203.0.113.7"
+
+
+def test_spoofed_forwarded_for_cannot_dodge_login_limit(api, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "trusted_proxy_hops", 1)
+    codes = [
+        api.post(
+            "/api/v1/auth/login",
+            json={"email": f"u{i}@x.io", "password": "wrong-pass-1"},
+            headers={"x-forwarded-for": f"10.9.{i}.1, 198.51.100.4"},
+        ).status_code
+        for i in range(12)
+    ]
+    assert 429 in codes  # rotating the spoofable prefix doesn't help; the real client IP is limited

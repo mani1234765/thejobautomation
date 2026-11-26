@@ -2,7 +2,8 @@
 
 Legend: ✅ PASS (implemented and verified) · 🟡 PARTIAL · ⛔ BLOCKED (implemented, live verification needs credentials) · ❌ NOT IMPLEMENTED
 
-Current milestone: **V1.1 — Integration verification & production readiness** (2026-11-26). No new product
+Current milestone: **V1.2 — Staging & release validation** (2026-11-26), see §4. Previous: **V1.1 — Integration
+verification & production readiness** (2026-11-26). No new product
 features were added. The fixes in this milestone are security hardening and defects in existing behaviour.
 The release-readiness report is in [RELEASE_READINESS_V1_1.md](RELEASE_READINESS_V1_1.md).
 
@@ -95,7 +96,29 @@ The release-readiness report is in [RELEASE_READINESS_V1_1.md](RELEASE_READINESS
 | 11 | Migrations and backup/recovery | ✅ PASS | Up/check/down/up on SQLite and PostgreSQL 17; backup → wipe → restore drill with `pg_dump`/`pg_restore` and file checksums |
 | 12 | Production deployment plan | ✅ PASS | DEPLOYMENT.md. **Not deployed — awaiting approval** |
 
-## 4. Next milestones
+## 4. V1.2 — Staging & release validation
+
+| Phase | Task | Status | Evidence / what's needed |
+|---|---|---|---|
+| 1 | Inspect git status and structure | ✅ PASS | |
+| 1 | `.gitignore` covers .env, credentials, OAuth tokens, DBs, resumes, backups, logs, artifacts | ✅ PASS | Expanded ignore rules; staged-file review |
+| 1 | Secret scan | ✅ PASS | detect-secrets + key patterns: no real secrets. Found and fixed a placeholder-key acceptance bug (SECURITY #16) |
+| 1 | Clean initial commit | ✅ PASS | Local commits on `main`. **Not pushed** |
+| 2 | GitHub repository + remote | ⛔ BLOCKED | Needs the repository URL from the owner (no `gh` CLI here) |
+| 2 | Push + remote CI run | ⛔ BLOCKED | Needs explicit push approval; actual GitHub result unknown |
+| 3 | AI live (assistant, rewording, cover letter, interview feedback) | ⛔ BLOCKED | No provider credentials configured |
+| 3 | Gmail OAuth + draft (not sent) | ⛔ BLOCKED | No Google OAuth client |
+| 3 | WhatsApp config + test message | ⛔ BLOCKED | No Meta credentials; sending also needs explicit approval |
+| 4 | Hosting comparison & recommendation | ✅ PASS | Render recommended (DEPLOYMENT.md §10) |
+| 4 | Postgres, Redis, resume storage, worker, env vars | ✅ PASS (defined) | `render.yaml`, `backend/Dockerfile`; Blueprint not yet validated by the CLI (login expired) and image not built (no Docker locally) |
+| 4 | Trusted proxy hops | ✅ PASS | Hop-count client IP; Next.js pass-through measured; tests. Live hop count to confirm on staging |
+| 4 | HTTPS + security headers | ✅ PASS | HSTS, nonce CSP, frame/sniff/referrer/permissions headers (E2E) |
+| 4 | MCP HTTP authenticated | ✅ PASS | No MCP endpoint is deployed; local HTTP transport is loopback-only |
+| 4 | Backups & recovery | ✅ PASS (local) | Drill passes on PostgreSQL 17; staging run pending deployment |
+| 4 | Deploy staging | ⛔ BLOCKED | Awaiting explicit deployment approval (and Render login) |
+| 5 | Staging acceptance | ⛔ BLOCKED | Depends on deployment. Locally: full automated suite green (§6 of RELEASE_READINESS_V1_2.md) |
+
+## 5. Next milestones
 1. **Credentials** (owner): AI key, Google OAuth client, WhatsApp Cloud API → run `verify_integrations --live`
    and flip the BLOCKED rows to PASS or FAIL.
 2. **Push to GitHub** and confirm CI is green there; add `integration-verification` environment secrets.

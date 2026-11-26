@@ -47,6 +47,10 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", csp);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
+  // HTTPS-only for a year in production (TLS terminates at the platform proxy; ignored over plain HTTP).
+  if (process.env.NODE_ENV !== "development") {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   return response;
 }
 

@@ -131,6 +131,17 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001 - reported, never raised
             checks["database"] = "unavailable"
         checks["rate_limiter"] = f"{rate_limiter.backend}:" + ("ok" if rate_limiter.healthy() else "unavailable")
+        # Resume storage must be writable (catches volume ownership/mount problems before the first upload).
+        import os
+
+        from app.config import get_settings
+
+        storage = get_settings().storage_dir
+        try:
+            storage.mkdir(parents=True, exist_ok=True)
+            checks["storage"] = "ok" if os.access(storage, os.W_OK) else "not_writable"
+        except OSError:
+            checks["storage"] = "unavailable"
         ok = all(v.endswith("ok") for v in checks.values())
         return JSONResponse({"status": "ready" if ok else "degraded", "checks": checks}, status_code=200 if ok else 503)
 

@@ -148,6 +148,7 @@ test("responses carry a strict, per-request nonce CSP", async ({ request }) => {
   const nonce = (h: string) => /'nonce-([^']+)'/.exec(h)?.[1];
   expect(nonce(a)).toBeTruthy();
   expect(nonce(a)).not.toEqual(nonce(b));
+  expect((await request.get("/login")).headers()["strict-transport-security"]).toContain("max-age=31536000");
 });
 
 test("no CSP violations occurred during the journey", async () => {

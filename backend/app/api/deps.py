@@ -42,7 +42,19 @@ class Principal:
 
 
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    """Caller IP for rate limiting and audit.
+
+    With N trusted appending proxies, the right-most N entries of X-Forwarded-For were written by
+    infrastructure; the left-most of those is the real client. Anything further left came from the
+    client and is ignored, so it can't be spoofed. Run uvicorn with --no-proxy-headers so the TCP
+    peer isn't rewritten first.
+    """
+    peer = request.client.host if request.client else "unknown"
+    hops = get_settings().trusted_proxy_hops
+    if hops <= 0:
+        return peer
+    chain = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    return chain[-hops] if len(chain) >= hops else peer
 
 
 def _from_api_token(db: Session, raw: str) -> Principal | None:

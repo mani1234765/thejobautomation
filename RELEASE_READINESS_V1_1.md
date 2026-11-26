@@ -1,5 +1,9 @@
 # JobPilot V1.1 — Release Readiness Report
 
+> Superseded by [RELEASE_READINESS_V1_2.md](RELEASE_READINESS_V1_2.md). Corrections since V1.1: a placeholder
+> secret key was accepted in production (fixed); the proxy-trust guidance here (`--forwarded-allow-ips`) is
+> replaced by the hop-count approach in DEPLOYMENT.md.
+
 Date: 2026-11-26 · Scope: integration verification and production readiness (no new features) ·
 **Deployment: not performed — awaiting explicit approval.**
 

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     rate_limit_api_per_minute: int = 240
     # Shared limiter store. Required in production so limits hold across API replicas.
     redis_url: str | None = None
+    # Number of proxies in front of the API that APPEND the caller's address to X-Forwarded-For.
+    # The Next.js rewrite passes the header through unchanged (measured), so behind one platform load
+    # balancer this is 1. 0 = ignore the header and use the TCP peer. Only safe if the API is not
+    # reachable except through those proxies.
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
 
     # AI provider (provider-neutral). Leave key empty to run without AI features.
     llm_provider: Literal["openai", "anthropic", "none"] = "none"
@@ -60,6 +65,20 @@ class Settings(BaseSettings):
 
     job_source_timeout_seconds: float = 20.0
     worker_poll_seconds: float = 3.0
+
+    # Platforms often expose Redis as host + port rather than a URL.
+    redis_host: str | None = None
+    redis_port: int = 6379
+
+    @model_validator(mode="after")
+    def _normalise_urls(self) -> Settings:
+        """Accept the URL forms hosting platforms hand out (postgres://, postgresql://) and host/port Redis."""
+        for prefix in ("postgres://", "postgresql://"):
+            if self.database_url.startswith(prefix):
+                self.database_url = "postgresql+psycopg://" + self.database_url[len(prefix) :]
+        if not self.redis_url and self.redis_host:
+            self.redis_url = f"redis://{self.redis_host}:{self.redis_port}/0"
+        return self
 
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:

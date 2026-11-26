@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 2026-11-26 (staging preparation; not deployed)
+
+### Security
+- Production rejects placeholder or low-variety `JOBPILOT_SECRET_KEY` values; `.env.example` no longer ships one.
+- Client IPs come from `JOBPILOT_TRUSTED_PROXY_HOPS` (right-most appended entries) and uvicorn runs with
+  `--no-proxy-headers`, replacing the spoofable `--forwarded-allow-ips '*'` pattern.
+- HSTS on production responses.
+
+### Added (operations)
+- `render.yaml` Blueprint and `backend/Dockerfile` for Render staging (unapplied).
+- Platform URL normalisation (`postgres://`, Redis host/port); web tier accepts the API host and port.
+- Readiness probe reports resume-storage writability.
+- Expanded `.gitignore`; initial local git commit (not pushed).
+
 ## 1.1.0 — 2026-11-26 (integration verification & production readiness)
 
 No new product features.

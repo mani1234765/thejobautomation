@@ -5,18 +5,18 @@
 | Suite | Command | Count | What it proves |
 |---|---|---|---|
 | Backend domain | `uv run pytest tests/test_resume_domain.py tests/test_domain_rules.py` | 34 | Parsing across naming styles, experience categories, DOCX formatting preservation (package byte-identity), salary/stipend policy, state machine, JD parsing, taxonomy ambiguity, deterministic + confidence-weighted matching |
-| Backend API & security | `uv run pytest tests/test_api_security.py` | 18 | Auth, httpOnly cookies, CSRF, rate limits, cross-user isolation, token scopes, web-only routes, logout-all, **server-side logout revocation**, upload validation + **streamed size limit**, approval can't be disabled, **API CSP**, export, **re-authenticated** deletion, model allow-list, production key validation, readiness probe |
+| Backend API & security | `uv run pytest tests/test_api_security.py` | 21 | Auth, httpOnly cookies, CSRF, rate limits, cross-user isolation, token scopes, web-only routes, logout-all, **server-side logout revocation**, upload validation + **streamed size limit**, approval can't be disabled, **API CSP**, export, **re-authenticated** deletion, model allow-list, production key validation, readiness probe |
 | Backend workflows | `uv run pytest tests/test_workflows.py` | 17 | Resume → profile, discovery, tailoring, application lifecycle, daily limit, MCP can't bypass approval, automations, assistant loop, AI budget, interviews, dashboard/analytics, **daily summary** |
 | AI features | `uv run pytest tests/test_ai_features.py` | 5 | Cover letters, drafted vs unknown answers, honest degradation on provider failure, interview plan + feedback, prompt-injection containment, budget for unpriced models |
 | Integration contracts | `uv run pytest tests/test_integration_contracts.py` | 12 | Exact requests/responses for Anthropic (official SDK via mock transport), OpenAI-compatible, Google OAuth/Gmail (exchange, refresh, list, draft, revocation, **full sync with classification + acknowledgement**), WhatsApp (request, errors, worker delivery states) |
 | Integration verifier | `uv run pytest tests/test_verify_integrations.py` | 5 | The live verifier itself: BLOCKED without credentials, PASS/FAIL logic for AI, Gmail and WhatsApp, side-effect gating |
-| Infrastructure | `uv run pytest tests/test_rate_limit.py tests/test_migrations.py tests/test_backup.py` | 8 | Redis limiter shared across instances, window expiry, fail-closed/fail-open, production requires Redis; migrations up → check → down → up; **backup → wipe → restore drill** with checksums and tamper detection |
+| Infrastructure | `uv run pytest tests/test_rate_limit.py tests/test_migrations.py tests/test_backup.py` | 9 | Redis limiter shared across instances, window expiry, fail-closed/fail-open, production requires Redis; migrations up → check → down → up; **backup → wipe → restore drill** with checksums and tamper detection |
 | MCP server | `cd mcp-server && uv run pytest` | 7 | Tool registry (no submit/send), token forwarding, error mapping, input validation, loopback-only HTTP, no token leakage |
 | Frontend unit | `cd frontend && npm test` | 21 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store |
 | E2E | `cd frontend && npx playwright test` | 16 | Full journey on a real public job board, axe on every page, **CSP header per request + zero CSP violations** |
 
-Backend total: **99** (all pass on PostgreSQL 17 + Redis 7, coverage 85%); on SQLite without Redis, 97 pass and
-2 Redis-only tests skip. Grand total **143** automated tests.
+Backend total: **103** (all pass on PostgreSQL 17 + Redis 7, coverage 85%); on SQLite without Redis, 101 pass and
+2 Redis-only tests skip. Grand total **147** automated tests (103 backend, 7 MCP, 21 frontend, 16 E2E).
 
 ### Running against real PostgreSQL and Redis
 ```bash

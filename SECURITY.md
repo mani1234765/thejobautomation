@@ -1,6 +1,6 @@
 # JobPilot Security Model
 
-Last reviewed: 2026-11-26 (V1.1 integration & production-readiness review).
+Last reviewed: 2026-11-26 (V1.2 staging review; V1.1 review findings below).
 
 ## Authentication & sessions
 * Passwords: Argon2id. Minimum 10 characters mixing at least two character classes. Responses and timing
@@ -33,8 +33,9 @@ Last reviewed: 2026-11-26 (V1.1 integration & production-readiness review).
   * Auth: 10/min per IP and per email, **fail-closed** if Redis is unreachable.
   * API: 240/min per user, fail-open with an error log.
 * The in-process limiter is used only when no Redis URL is configured (development/tests).
-* Per-IP limits depend on correct proxy trust: run uvicorn with `--forwarded-allow-ips` set to your proxy
-  hops only (see DEPLOYMENT.md). With `*`, clients can spoof their IP; the per-email limit still applies.
+* Client IPs come from `JOBPILOT_TRUSTED_PROXY_HOPS`: the right-most N `X-Forwarded-For` entries are
+  infrastructure, and anything client-supplied to their left is ignored. uvicorn runs with
+  `--no-proxy-headers`. A test shows that rotating a spoofed prefix doesn't escape the login limit.
 
 ## Content-Security-Policy
 * Web: a fresh nonce per request (`src/proxy.ts`):
@@ -95,6 +96,16 @@ Last reviewed: 2026-11-26 (V1.1 integration & production-readiness review).
   protection, because it has no authentication of its own.
 * Error messages never echo the token (tested). Job descriptions returned to clients are labelled untrusted.
 
+## V1.2 review findings
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| 16 | High | `.env.example` shipped `JOBPILOT_SECRET_KEY=change-me-…`, and production accepted it (the guard only rejected the built-in dev default). A copied example file would have meant a publicly known session-signing key | **Fixed** — the example value is blank; production rejects placeholder and low-variety keys (test) |
+| 17 | Medium | On a PaaS, proxy IPs aren't known in advance, and uvicorn's `--forwarded-allow-ips '*'` trusts the **left-most** (client-controlled) `X-Forwarded-For` entry, which makes per-IP limits spoofable | **Fixed** — hop-count client IP + `--no-proxy-headers` (tests). The Next.js rewrite was measured to pass the header through unchanged |
+| 18 | Low | No HSTS | **Fixed** — `Strict-Transport-Security: max-age=31536000; includeSubDomains` on production responses (E2E) |
+| 19 | Info | Secret scan of the initial commit (detect-secrets + key patterns) | **Clean** — only test passwords, the ephemeral CI database password and placeholders |
+| 20 | Info | Staging hop count (1) is an expectation for Render's proxy, not yet observed live | **Open** — confirm during staging acceptance (DEPLOYMENT.md §3) |
+
 ## V1.1 review findings
 
 | # | Severity | Finding | Status |
@@ -108,7 +119,7 @@ Last reviewed: 2026-11-26 (V1.1 integration & production-readiness review).
 | 7 | Low | Account deletion did not require re-authentication | **Fixed** — password required (test) |
 | 8 | Low | A malformed encryption key was only detected when first used | **Fixed** — validated at boot in production (test) |
 | 9 | Low | Two settings misled users: the in-app toggle did nothing and daily summaries were never generated | **Fixed** — in-app is shown as always-on; the worker now generates summaries (test) |
-| 10 | Medium | Per-IP limits can be spoofed if `--forwarded-allow-ips` is too broad | **Open (configuration)** — documented in DEPLOYMENT.md |
+| 10 | Medium | Per-IP limits can be spoofed if `--forwarded-allow-ips` is too broad | **Superseded by #17** (fixed in V1.2) |
 | 11 | Medium | Local file storage prevents running several API instances safely | **Open** — single API instance + volume until object storage exists |
 | 12 | Low | No MFA, email verification or self-service password reset | **Open** — product backlog |
 | 13 | Low | Audit log retention isn't automated | **Open** — define a policy (e.g. 1 year) and add a purge job |

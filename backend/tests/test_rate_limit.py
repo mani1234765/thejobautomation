@@ -63,3 +63,13 @@ def test_production_requires_redis(monkeypatch):
             cookie_secure=True,
             redis_url=None,
         )
+
+
+def test_platform_url_forms_are_normalised():
+    from app.config import Settings
+
+    for raw in ("postgres://u:p@db:5432/jp", "postgresql://u:p@db:5432/jp"):
+        assert Settings(database_url=raw).database_url == "postgresql+psycopg://u:p@db:5432/jp"
+    assert Settings(database_url="sqlite:///x.db").database_url == "sqlite:///x.db"
+    assert Settings(redis_url=None, redis_host="kv-internal", redis_port=6380).redis_url == "redis://kv-internal:6380/0"
+    assert Settings(redis_url="redis://a:1/2", redis_host="ignored").redis_url == "redis://a:1/2"

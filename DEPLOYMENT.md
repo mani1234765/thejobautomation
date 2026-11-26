@@ -1,7 +1,7 @@
-# JobPilot — Production Deployment Plan (V1.1)
+# JobPilot — Deployment Plan (V1.2: staging on Render)
 
-> **Status: plan only. Nothing has been deployed.** Deployment waits for explicit owner approval and
-> for the decisions in §1.
+> **Status: plan and configuration only. Nothing has been deployed.** Applying `render.yaml` creates
+> billable resources and waits for the owner's explicit approval.
 
 ## 1. Decisions needed from the owner before deploying
 
@@ -48,13 +48,16 @@ Required (the app refuses to boot in production without the starred items):
 | `JOBPILOT_API_ORIGIN` | Web → API internal URL (web service only) |
 | AI / Gmail / WhatsApp variables | Optional; see `.env.example` |
 
-The API must trust forwarded client IPs **only from the proxy hops**, or per-IP rate limits become
-spoofable:
+Client IPs (for rate limits and audit) come from `JOBPILOT_TRUSTED_PROXY_HOPS`, the number of proxies in
+front of the API that **append** to `X-Forwarded-For`. The real client is the right-most of those entries,
+and anything further left (client-supplied) is ignored. uvicorn runs with `--no-proxy-headers`. Its own
+`--forwarded-allow-ips '*'` would trust the **left-most**, spoofable entry (verified in uvicorn's source).
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 \
-  --proxy-headers --forwarded-allow-ips "<proxy and web-tier private IPs/CIDRs>"   # never "*"
-```
+* Measured: the Next.js `/api` rewrite passes `X-Forwarded-For` through **unchanged** and adds nothing.
+* Behind one platform load balancer → `JOBPILOT_TRUSTED_PROXY_HOPS=1`. This is safe only if the API
+  is **not** reachable except through that path (a private service).
+* **Staging acceptance must confirm it**: sign in from a known IP and check the `auth.login` audit
+  event's `ip`. If the platform adds a second appending hop (e.g. a CDN), raise the value to 2.
 
 ## 4. Pre-deployment checklist
 
@@ -112,3 +115,63 @@ automated drill (`tests/test_backup.py`) does this on every CI run against Postg
 Go when: CI green · checklist complete · smoke test passes · `verify_integrations` shows no FAIL (BLOCKED
 items are acceptable only if the related feature is intentionally left unconfigured and the UI shows
 "Requires setup").
+
+
+## 10. Staging on Render (V1.2)
+
+### Why Render
+| Need | Render | Fly.io | Railway |
+|---|---|---|---|
+| Public Next.js + **private** API (not internet-reachable) | Web service + private service (`pserv`) | Possible via 6PN private networking, more manual | Private networking, project-scoped |
+| Background worker | `worker` service type | Machines / process groups | Worker services |
+| Managed Postgres | Yes | Managed Postgres (separate product, priced per plan + storage) | Yes, in-project |
+| Redis-compatible store | Key Value (Valkey) | Upstash via CLI | Yes, in-project |
+| Persistent resume storage | Disk on one service (single instance, brief downtime per deploy) | Volume attached to one Machine | Volumes |
+| Infrastructure as code | `render.yaml` Blueprint, CLI validation | `fly.toml` per app | Config-as-code, less complete |
+| Already on this machine | Render CLI v2.35.0 | — | — |
+
+Render is recommended: every JobPilot tier maps onto a native service type, the API can be truly private
+(which is what makes trusting one forwarded hop safe), and the whole stack is one reviewed Blueprint.
+Fly.io gives more control but more operations work; Railway is simplest but its private networking and
+IaC are less explicit. Comparison sources: Render Blueprint spec and disk docs; Fly/Railway comparison
+articles (largely vendor-authored, so treat the claims cautiously).
+
+### What `render.yaml` defines (unapplied)
+* `jobpilot-db` Postgres 17, private only (`ipAllowList: []`).
+* `jobpilot-kv` Key Value, `noeviction` (rate-limit windows are never evicted), private only.
+* `jobpilot-api` **private service** (Docker, `backend/Dockerfile`):
+  * `preDeployCommand: alembic upgrade head`;
+  * a 5 GB disk at `/app/storage`;
+  * uvicorn with `--no-proxy-headers`, `JOBPILOT_TRUSTED_PROXY_HOPS=1`.
+* `jobpilot-worker` (same image, `python -m app.worker.main`).
+* `jobpilot-web` (Node 22, `npm ci && npm run build`, health check `/login`); reaches the API via its
+  private `host` + port 10000.
+* Shared env group:
+  * Set by the Blueprint: `JOBPILOT_ENV=production` (staging runs with production guards), secure cookies,
+    and a generated secret key.
+  * Prompted in the Dashboard (`sync: false`): the Fernet key, public URL, and every integration credential.
+
+### Constraints accepted for staging
+* **Disk:** the API is limited to **one instance**, and each deploy has a few seconds of downtime, because
+  Render stops the old instance before starting the new one. The disk can't be read during build or
+  pre-deploy.
+* **Image:** the Dockerfile has **not been built locally** (no Docker on the development machine); Render's
+  first build is its first build.
+* **Disk ownership:** the container runs as non-root (uid 10001). If the mounted disk isn't writable,
+  `/api/v1/health/ready` reports `storage: not_writable` before any upload is attempted.
+
+### Procedure (requires approval at each ⚑)
+1. ⚑ `render login` (owner), then `render blueprints validate render.yaml` (read-only).
+2. ⚑ Push the repository to GitHub (CI must be green).
+3. ⚑ Create the Blueprint from the repo in the Render Dashboard. Enter the `sync: false` values: generate the
+   Fernet key locally; set `JOBPILOT_PUBLIC_APP_URL` to the web service URL.
+4. Wait for `/api/v1/health/ready` (via the web URL) to report `ready`; run the staging acceptance checklist
+   (RELEASE_READINESS_V1_2.md §Staging acceptance).
+5. Google OAuth: add `https://<web host>/api/v1/integrations/gmail/callback` as an authorised redirect URI.
+6. Run `python -m app.ops.verify_integrations --live` from a Render shell on `jobpilot-api`.
+7. Backups: confirm the Postgres plan's backup/PITR retention in the Dashboard; run
+   `python -m app.ops.backup create --out /app/storage/backups` and then a restore into a scratch database.
+
+### MCP in staging
+Not deployed. The MCP server runs on each user's machine over stdio (or loopback HTTP) with a scoped token
+against the staging URL. No unauthenticated MCP endpoint is exposed.
