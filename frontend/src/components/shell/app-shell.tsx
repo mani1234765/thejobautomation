@@ -11,6 +11,7 @@ import { LogoMark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tooltip } from "@/components/ui/overlay";
 import { Kbd, Skeleton } from "@/components/ui/primitives";
+import { commandMenuShortcutLabel, isCommandMenuShortcut } from "@/lib/shortcuts";
 import { api, ApiError } from "@/lib/api";
 import { cn, initials } from "@/lib/format";
 import { useMe, useNotifications } from "@/lib/queries";
@@ -115,8 +116,8 @@ function UserMenu({ onCommand }: { onCommand: () => void }) {
           <MenuItem onSelect={logout}><LogOut /> Sign out</MenuItem>
         </MenuContent>
       </Menu>
-      <Tooltip content={<span>Command menu <Kbd className="ml-1 border-transparent">⌘K</Kbd></span>}>
-        <Button variant="ghost" size="icon-sm" aria-label="Open command menu" onClick={onCommand}>
+      <Tooltip content={<span>Command menu <Kbd className="ml-1 border-transparent">{commandMenuShortcutLabel()}</Kbd></span>}>
+        <Button variant="ghost" size="icon-sm" aria-label="Open command menu" aria-keyshortcuts="Meta+K Control+K" onClick={onCommand}>
           <Search />
         </Button>
       </Tooltip>
@@ -180,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     let pendingG = false;
     let timer: ReturnType<typeof setTimeout>;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (isCommandMenuShortcut(e)) {
         e.preventDefault();
         setCmdOpen((o) => !o);
         return;

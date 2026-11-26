@@ -164,10 +164,32 @@ test("prepare, approve and record a submission", async () => {
   await expect(submitted).toContainText("1");
 });
 
+/** Load a page and wait until the app shell (and its keyboard shortcuts) is interactive. */
+async function openShell(path: string) {
+  await page.goto(path);
+  await expect(page.getByRole("button", { name: "Open command menu" }).first()).toBeVisible();
+}
+
+test("command menu opens with ⌘K and Ctrl+K, and closes with Escape", async () => {
+  await openShell("/overview");
+  const input = page.getByPlaceholder("Search pages and actions…");
+  // "ControlOrMeta" is the platform convention (⌘K on macOS, Ctrl+K on Linux/Windows); Ctrl+K is also
+  // accepted on macOS, so both are exercised on every OS.
+  for (const shortcut of ["ControlOrMeta+k", "Control+k"]) {
+    await page.keyboard.press(shortcut);
+    await expect(input, shortcut).toBeVisible();
+    await expect(input).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(input, `${shortcut} then Escape`).toBeHidden();
+  }
+  await expect(page.getByRole("button", { name: "Open command menu" }).first()).toHaveAttribute("aria-keyshortcuts", "Meta+K Control+K");
+});
+
 test("command palette navigates by keyboard", async () => {
-  await page.goto("/overview");
-  await page.keyboard.press("Meta+k");
-  await page.getByPlaceholder("Search pages and actions…").fill("analytics");
+  await openShell("/overview");
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(page.getByPlaceholder("Search pages and actions…")).toBeFocused();
+  await page.keyboard.type("analytics");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/analytics/);
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();

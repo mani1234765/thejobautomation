@@ -14,11 +14,11 @@
 | Integration verifier | `uv run pytest tests/test_verify_integrations.py` | 5 | The live verifier itself: BLOCKED without credentials, PASS/FAIL logic for AI, Gmail and WhatsApp, side-effect gating |
 | Infrastructure | `uv run pytest tests/test_rate_limit.py tests/test_migrations.py tests/test_backup.py` | 9 | Redis limiter shared across instances, window expiry, fail-closed/fail-open, production requires Redis; migrations up → check → down → up; **backup → wipe → restore drill** with checksums and tamper detection |
 | MCP server | `cd mcp-server && uv run pytest` | 7 | Tool registry (no submit/send), token forwarding, error mapping, input validation, loopback-only HTTP, no token leakage |
-| Frontend unit | `cd frontend && npm test` | 21 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store |
-| E2E | `cd frontend && npx playwright test` | 17 | Full journey on a real public job board, **resume review: edit, move, reload, re-extract**, axe on every page, **CSP header per request + zero CSP violations** |
+| Frontend unit | `cd frontend && npm test` | 25 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store, **command-menu shortcut (⌘K and Ctrl+K)** |
+| E2E | `cd frontend && npx playwright test` | 18 | Full journey on a real public job board, **resume review: edit, move, reload, re-extract**, **command menu via the platform shortcut and Ctrl+K**, axe on every page, **CSP header per request + zero CSP violations** |
 
 Backend total: **138** (all pass on PostgreSQL 17 + Redis 7, coverage 86%); on SQLite without Redis, 136 pass and
-2 Redis-only tests skip. Grand total **183** automated tests (138 backend, 7 MCP, 21 frontend, 17 E2E).
+2 Redis-only tests skip. Grand total **188** automated tests (138 backend, 7 MCP, 25 frontend, 18 E2E).
 
 ### Running against real PostgreSQL and Redis
 ```bash
