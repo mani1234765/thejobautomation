@@ -11,6 +11,8 @@
   USD, PLN (zł), EUR and others are converted only with a fresh exchange-rate snapshot
   (`JOBPILOT_FX_RATES_FILE`) that records its source and date; otherwise manual review.
 - Daily application limit: 1–10,000, default 10,000, enforced by the API and clamped at submission.
+  Migration `c4d2e8f1a9b3` (data only, reversible) raises existing users who were still on the old default
+  of 10 to 10,000. Users with any other saved value keep it.
 - **Approvals are human-only.** The MCP `approve_application` tool and the `approvals:write` scope are
   removed; MCP can `request_approval`. Decisions require a signed-in web session.
 

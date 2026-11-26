@@ -155,6 +155,7 @@ warns).
 | MCP cannot approve; only a human in the UI; audit logged | ✅ PASS | MCP tests, `test_mcp_token_cannot_bypass_approval`, service guard |
 | Explainable verdicts with reason codes, rule, evidence and missing information | ✅ PASS | eligibility tests; job detail UI |
 | Dev DB backed up, verified, migrated, counts unchanged | ✅ PASS | see AUDIT_REPORT.md §11 |
+| Existing users on the old default (10) raised to 10,000 | ✅ PASS | migration `c4d2e8f1a9b3`; `test_existing_daily_limits_on_the_old_default_are_raised` (SQLite and PostgreSQL); dev DB backed up, verified, migrated: 16 of 16 users now 10,000, all counts unchanged |
 | Review fix: daily limit atomic under concurrency | ✅ PASS | `test_simultaneous_starts_*` on PostgreSQL (row lock); control test fails without the lock |
 | Review fix: GET /settings tolerates out-of-range stored values | ✅ PASS | normalisation report; no write on GET |
 | Review fix: city aliases and work arrangements | ✅ PASS | parametrised location tests |

@@ -77,7 +77,7 @@ non-loopback binding is refused).
 ## Tests
 
 ```bash
-cd backend && uv run pytest                      # 250 tests (2 need Redis, 4 need PostgreSQL); see TESTING.md for PostgreSQL/Redis mode
+cd backend && uv run pytest                      # 251 tests (2 need Redis, 4 need PostgreSQL); see TESTING.md for PostgreSQL/Redis mode
 cd mcp-server && uv run pytest                   # 7 tests
 cd frontend && npm test                          # 21 unit/component tests (Vitest)
 cd frontend && npx playwright test               # 19 E2E + axe + CSP tests (needs API + web running)

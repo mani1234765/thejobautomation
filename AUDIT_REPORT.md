@@ -299,3 +299,11 @@ Live GitLab sample (242 listings, synthetic candidate), before → after:
 | City mismatch | 21 | 0 |
 
 The remaining rejections are seniority (51), experience (5) and employment type (3).
+
+**Existing users' daily limit (owner decision, 2026-11-27):** data migration `c4d2e8f1a9b3` raises limits still
+on the old default of 10 to 10,000; other saved values are kept.
+
+* Backup first: `backend/data/backups/jobpilot-pre-c4d2e8f1a9b3-20261126T233031Z.db`, mode `0600`.
+* Backup verification: integrity check ok; counts identical to the live database.
+* After migrating: 16 of 16 users at 10,000; users 16, resumes 15, applications 10, jobs 183, skills 347,
+  approval_requests 6 and audit_events 220 unchanged; integrity ok; `alembic check` clean.
