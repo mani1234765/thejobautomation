@@ -23,10 +23,11 @@ def test_expected_tools_registered():
     names = {t.name for t in asyncio.run(m.server.list_tools())}
     assert {"search_jobs", "get_job_details", "get_user_profile", "analyse_resume", "analyse_job_description",
             "calculate_job_match", "tailor_resume", "generate_cover_letter", "prepare_application_answers",
-            "list_applications", "get_application_status", "approve_application", "pause_automation",
+            "list_applications", "get_application_status", "request_approval", "pause_automation",
             "resume_automation", "get_career_insights"} <= names
-    # No tool can submit an application or send messages.
+    # No tool can submit an application, send messages or grant approval.
     assert not any("submit" in n or "send" in n for n in names)
+    assert not any(n.startswith(("approve", "decide", "reject")) for n in names)
 
 
 @respx.mock
@@ -42,10 +43,20 @@ def test_search_jobs_forwards_token_and_filters():
 
 @respx.mock
 def test_api_errors_become_tool_errors():
-    respx.post(f"{BASE}/approvals/abcdefgh/decide").mock(return_value=httpx.Response(
-        403, json={"error": {"message": "This token lacks the 'approvals:write' scope.", "status": 403}}))
-    with pytest.raises(ToolError, match="approvals:write"):
-        call("approve_application", {"approval_id": "abcdefgh", "approve": True})
+    respx.post(f"{BASE}/applications/abcdefgh/request-approval").mock(return_value=httpx.Response(
+        400, json={"error": {"message": "Only applications being prepared can be sent for approval.", "status": 400}}))
+    with pytest.raises(ToolError, match="being prepared"):
+        call("request_approval", {"application_id": "abcdefgh"})
+
+
+@respx.mock
+def test_request_approval_creates_a_pending_request_only():
+    route = respx.post(f"{BASE}/applications/abcdefgh/request-approval").mock(
+        return_value=httpx.Response(200, json={"id": "appr1234", "status": "pending"}))
+    decide = respx.post(url__regex=rf"{BASE}/approvals/.*").mock(return_value=httpx.Response(200, json={}))
+    result = call("request_approval", {"application_id": "abcdefgh"})
+    assert route.called and not decide.called
+    assert result.structured_content["status"] == "pending"
 
 
 def test_input_validation_rejects_bad_ids():

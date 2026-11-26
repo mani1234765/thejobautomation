@@ -140,6 +140,27 @@ Limitations: classification is still heuristic and was measured on synthetic res
 or certifications only splits their detail lines; moving to Skills keeps only recognised skills (the dialog
 warns).
 
+## 4b. Phase 2 — Policy and eligibility engine (2026-11-27)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Salary strictly > threshold; ₹8 exactly and ₹6–12 rejected; ₹8.01 eligible | ✅ PASS | `test_default_threshold_boundaries` |
+| Undisclosed eligible; unverified → review | ✅ PASS | same |
+| Missing or ambiguous currency → review (never INR) | ✅ PASS | `SAL_CURRENCY_UNKNOWN` cases; `$` kept ambiguous by the parser |
+| Explicit currency identification and safe conversion with documented source/date | ✅ PASS (mechanism) | `test_usd_and_pln_are_converted_with_a_fresh_documented_rate`, `test_conversion_failures_go_to_manual_review` |
+| Real exchange-rate data | ⛔ BLOCKED | No rate snapshot configured (by design no rates are hard-coded); foreign pay goes to manual review until `JOBPILOT_FX_RATES_FILE` is supplied |
+| User-configurable threshold, persisted, validated, per user, used by the backend | ✅ PASS | API tests incl. restart and two users; E2E |
+| Threshold change affects new decisions; history kept with policy snapshot; explicit re-evaluation | ✅ PASS | `test_threshold_change_affects_new_evaluations_and_preserves_history` |
+| Daily limit 1–10,000 enforced in the API; 10,001 rejected; bypass attempts | ✅ PASS | parametrised tests, token 403, clamp, 9,999/10,000 submission boundary |
+| MCP cannot approve; only a human in the UI; audit logged | ✅ PASS | MCP tests, `test_mcp_token_cannot_bypass_approval`, service guard |
+| Explainable verdicts with reason codes, rule, evidence and missing information | ✅ PASS | eligibility tests; job detail UI |
+| Dev DB backed up, verified, migrated, counts unchanged | ✅ PASS | see AUDIT_REPORT.md §11 |
+| Review fix: daily limit atomic under concurrency | ✅ PASS | `test_simultaneous_starts_*` on PostgreSQL (row lock); control test fails without the lock |
+| Review fix: GET /settings tolerates out-of-range stored values | ✅ PASS | normalisation report; no write on GET |
+| Review fix: city aliases and work arrangements | ✅ PASS | parametrised location tests |
+| Review fix: zero extracted-skill overlap → review; rejection only on explicit mandatory evidence | ✅ PASS | skills tests; live GitLab sample: skills rejections 158 → 1 |
+| Review fix: missing preferred facts → review | ✅ PASS | missing-information tests |
+
 ## 5. Next milestones
 1. **Credentials** (owner): AI key, Google OAuth client, WhatsApp Cloud API → run `verify_integrations --live`
    and flip the BLOCKED rows to PASS or FAIL.

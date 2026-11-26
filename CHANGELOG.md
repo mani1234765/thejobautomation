@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased — Phase 2: policy and eligibility engine
+
+### Changed (policy)
+- Salary eligibility is **strictly greater than** the user's threshold (default ₹8 LPA). A verified minimum
+  at or below it, including ranges like ₹6–12 LPA, is rejected.
+- The threshold is user-configurable in Settings (0–200 LPA, two decimals). It's stored per user and
+  validated server-side.
+- Currency is never assumed. Missing or ambiguous currency (including a bare "$") goes to manual review.
+  USD, PLN (zł), EUR and others are converted only with a fresh exchange-rate snapshot
+  (`JOBPILOT_FX_RATES_FILE`) that records its source and date; otherwise manual review.
+- Daily application limit: 1–10,000, default 10,000, enforced by the API and clamped at submission.
+- **Approvals are human-only.** The MCP `approve_application` tool and the `approvals:write` scope are
+  removed; MCP can `request_approval`. Decisions require a signed-in web session.
+
+### Added
+- Explainable eligibility verdicts (ELIGIBLE / REJECTED / MANUAL_REVIEW) across salary or stipend, skills,
+  experience, seniority, location and employment type. Each verdict includes reason codes, the deciding
+  rules, quoted evidence from the listing and missing information. Shown in the job detail panel.
+- Each decision stores the policy it was made under. Saved or applied jobs keep their historical decision
+  when the policy changes until the user re-evaluates (`POST /jobs/{id}/reevaluate`, `POST /jobs/reevaluate`).
+
+### Fixed
+- Settings "Job policies" controls had no accessible names (axe).
+- **Daily limit race:** concurrent submission starts could exceed the limit (check-then-insert). Starts
+  now take a per-user row lock (`SELECT … FOR UPDATE` on `user_settings`) and re-read state under it.
+  Verified with simultaneous PostgreSQL requests.
+- `GET /settings` returned 500 when a stored value was out of range. Values are now normalised to the
+  nearest valid one and reported (`normalized`); nothing is rewritten until the user saves.
+  Enforcement uses the same effective values.
+- City aliases (Bangalore = Bengaluru, Bombay = Mumbai, Gurgaon = Gurugram, …) and whole-word matching
+  ("Pune" no longer matches "Puneet").
+- Zero overlap with *extracted* skills is now manual review, not rejection. Rejection needs two or more
+  skills the listing explicitly calls mandatory, all missing.
+- When the user restricts location, work arrangement or employment type and the listing doesn't state it,
+  the verdict is manual review (was eligible).
+
+### Operations
+- Local dev database backed up (`backend/data/backups/jobpilot-pre-b7c65986ac58-20261126T224005Z.db`) and
+  migrated to `b7c65986ac58`; record counts verified unchanged.
+
 ## Unreleased — Resume Review & Editor
 
 ### Added

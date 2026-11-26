@@ -118,11 +118,11 @@ def run_discovery(db: Session, user: User, cfg: AutomationConfig | None, log: Ex
 
 def run_preparation(db: Session, user: User, cfg: AutomationConfig | None, log: ExecutionLog) -> dict[str, Any]:
     f = {**DEFAULT_FILTERS["preparation"], **(cfg.filters if cfg else {})}
-    remaining = max(0, user.settings.daily_application_limit - app_svc.submissions_last_24h(db, user.id))
+    remaining = max(0, app_svc.daily_limit(user) - app_svc.submissions_last_24h(db, user.id))
     budget = min(int(f["max_per_run"]), remaining)
     stats = {"prepared": 0, "approval_requested": 0, "skipped": 0, "limit_remaining": remaining}
     if budget == 0:
-        log("info", "daily_limit_reached", limit=user.settings.daily_application_limit)
+        log("info", "daily_limit_reached", limit=app_svc.daily_limit(user))
         return stats
     rows = db.execute(
         select(Application, JobMatch)

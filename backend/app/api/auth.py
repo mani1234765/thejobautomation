@@ -25,7 +25,9 @@ from app.services import audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 CSRF_COOKIE = "jp_csrf"
-TOKEN_SCOPES = ("read", "jobs:write", "resumes:write", "applications:write", "approvals:write", "automation:write")
+# No scope can approve applications: approval decisions are human-only (web session). "approvals:write" was
+# removed; tokens created with it before still work for their other scopes, but it grants nothing.
+TOKEN_SCOPES = ("read", "jobs:write", "resumes:write", "applications:write", "automation:write")
 
 
 class Credentials(BaseModel):

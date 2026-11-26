@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowUpRight, Bookmark, BookmarkCheck, Briefcase, CircleHelp, EyeOff, FileText, GitCompareArrows, MapPin,
-  Wallet,
+  AlertTriangle, ArrowUpRight, Bookmark, BookmarkCheck, Briefcase, CircleCheck, CircleHelp, CircleX, EyeOff, FileText,
+  GitCompareArrows, History, MapPin, RefreshCw, Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,14 +13,86 @@ import { FactorBar, ScoreRing } from "@/components/ui/score";
 import { Callout, ErrorState } from "@/components/ui/states";
 import { api } from "@/lib/api";
 import {
-  EMPLOYMENT_LABEL, formatExperience, formatSalary, relativeTime, STATUS_META, WORK_MODE_LABEL,
+  EMPLOYMENT_LABEL, formatDate, formatExperience, formatSalary, relativeTime, STATUS_META, WORK_MODE_LABEL,
 } from "@/lib/format";
 import { keys, useAction, useJob, useResumes } from "@/lib/queries";
-import type { Application, JobDetail as JobDetailT, ResumeVersion } from "@/lib/types";
+import type { Application, EligibilityCheck, JobDetail as JobDetailT, ResumeVersion } from "@/lib/types";
 
 const FACTOR_LABEL: Record<string, string> = {
   skills: "Skills", experience: "Experience", role: "Role fit", location: "Location", level: "Level", employment: "Employment type",
 };
+
+const RULE_LABEL: Record<EligibilityCheck["rule"], string> = {
+  SALARY: "Salary", STIPEND: "Stipend", SKILLS: "Skills", EXPERIENCE: "Experience", SENIORITY: "Seniority",
+  LOCATION: "Location", EMPLOYMENT: "Employment type",
+};
+const OUTCOME: Record<EligibilityCheck["outcome"], { label: string; tone: "positive" | "danger" | "warning" | "neutral"; Icon: typeof CircleCheck }> = {
+  pass: { label: "Pass", tone: "positive", Icon: CircleCheck },
+  reject: { label: "Rejects", tone: "danger", Icon: CircleX },
+  review: { label: "Review", tone: "warning", Icon: AlertTriangle },
+  unknown: { label: "Unknown", tone: "neutral", Icon: CircleHelp },
+};
+
+/** The eligibility verdict: every rule, why, the listing's own words, and what was missing. */
+function EligibilityPanel({ job }: { job: JobDetailT }) {
+  const e = job.eligibility_detail!;
+  const reevaluate = useAction(() => api.post(`/jobs/${job.id}/reevaluate`), {
+    invalidate: [keys.job(job.id), ["jobs"], keys.dashboard], success: "Re-evaluated with your current policy",
+  });
+  const outdated = job.eligibility_outdated && (
+    <Callout tone="neutral" icon={History} title="Decided under an earlier policy">
+      <p>{e.policy ? `Evaluated with a ₹${e.policy.min_ctc_lpa} LPA minimum${e.evaluated_at ? ` on ${formatDate(e.evaluated_at)}` : ""}.` : "Evaluated before eligibility rules were updated."} Your settings have changed since; this decision is kept as it was until you re-evaluate.</p>
+      <Button size="sm" className="mt-2" loading={reevaluate.isPending} onClick={() => reevaluate.mutate(undefined)}><RefreshCw /> Re-evaluate</Button>
+    </Callout>
+  );
+  if (!e.checks) {
+    // A decision kept from before explainable verdicts existed.
+    return (
+      <div className="space-y-2">
+        {outdated}
+        {e.status === "ineligible" ? (
+          <Callout tone="danger" icon={AlertTriangle} title="Outside your criteria"><ul className="list-disc pl-4">{e.blocks.map((b) => <li key={b}>{b}</li>)}</ul></Callout>
+        ) : <Callout tone={e.status === "review" ? "warning" : "positive"} icon={Wallet}>{e.salary.reason}</Callout>}
+      </div>
+    );
+  }
+  const head = e.verdict === "REJECTED" ? { tone: "danger" as const, title: "Rejected by your policy", Icon: CircleX }
+    : e.verdict === "MANUAL_REVIEW" ? { tone: "warning" as const, title: "Needs your review", Icon: AlertTriangle }
+    : { tone: "positive" as const, title: "Eligible", Icon: CircleCheck };
+  return (
+    <section aria-labelledby="elig-h" className="space-y-3">
+      {outdated}
+      <h3 id="elig-h" className="sr-only">Eligibility</h3>
+      <Callout tone={head.tone} icon={head.Icon} title={head.title}>
+        {e.summary}
+        {!!e.decided_by?.length && <p className="mt-1 text-xs">Rule{e.decided_by.length > 1 ? "s" : ""}: {e.decided_by.map((r) => RULE_LABEL[r as EligibilityCheck["rule"]] ?? r).join(", ")}</p>}
+      </Callout>
+      <ul className="divide-y divide-border rounded-lg border border-border">
+        {e.checks.map((c) => {
+          const o = OUTCOME[c.outcome];
+          return (
+            <li key={c.rule} className="space-y-1 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium">{RULE_LABEL[c.rule] ?? c.rule}</span>
+                <Tooltip content={e.rules?.[c.rule]}><span><Badge tone={o.tone}><o.Icon className="size-3" /> {o.label}</Badge></span></Tooltip>
+              </div>
+              <p className="text-xs text-fg-muted">{c.explanation}</p>
+              {c.evidence.map((q) => <p key={q} className="border-l-2 border-border pl-2 text-xs text-fg-muted italic">{q}</p>)}
+              {c.missing.length > 0 && <p className="text-2xs text-fg-subtle">Missing: {c.missing.join(", ")}</p>}
+              <p className="font-mono text-2xs text-fg-subtle">{c.code}</p>
+            </li>
+          );
+        })}
+      </ul>
+      {e.policy && (
+        <p className="text-2xs text-fg-subtle">
+          Policy: minimum ₹{e.policy.min_ctc_lpa} LPA (strictly greater) · engine {e.policy.engine}
+          {e.policy.fx ? ` · exchange rates ${e.policy.fx.source}, ${e.policy.fx.as_of}` : " · no exchange-rate snapshot (foreign pay → review)"}
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function MatchExplanation({ job }: { job: JobDetailT }) {
   const m = job.match;
@@ -77,15 +149,7 @@ export function MatchExplanation({ job }: { job: JobDetailT }) {
         )}
       </div>
 
-      {e.status === "ineligible" ? (
-        <Callout tone="danger" icon={AlertTriangle} title="Outside your criteria">
-          <ul className="list-disc pl-4">{e.blocks.map((b) => <li key={b}>{b}</li>)}</ul>
-        </Callout>
-      ) : e.status === "review" ? (
-        <Callout tone="warning" icon={Wallet} title="Pay needs a look">{e.salary.reason}</Callout>
-      ) : (
-        <Callout tone="positive" icon={Wallet}>{e.salary.reason}</Callout>
-      )}
+      <EligibilityPanel job={job} />
       {m.concerns.filter((c) => !c.startsWith("Missing required")).length > 0 && (
         <ul className="space-y-1 text-xs text-fg-muted">
           {m.concerns.filter((c) => !c.startsWith("Missing required")).map((c) => (

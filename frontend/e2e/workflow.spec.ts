@@ -123,6 +123,11 @@ test("follow a real job board and see explained matches", async () => {
   await first.click();
   await expect(page.getByText("Why this score")).toBeVisible();
   await expect(page.getByText("Job description")).toBeVisible();
+  // Every eligibility rule is listed with its outcome; Ramp's "$" pay is never assumed to be INR or USD.
+  for (const rule of ["Salary", "Skills", "Experience", "Seniority", "Location", "Employment type"]) {
+    await expect(page.getByRole("dialog").getByText(rule, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText(/Policy: minimum ₹8 LPA \(strictly greater\)/)).toBeVisible();
   await axe(page);
 });
 
@@ -194,6 +199,26 @@ test("command palette navigates by keyboard", async () => {
   await expect(page).toHaveURL(/\/analytics/);
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
   await axe(page);
+});
+
+test("salary threshold is editable, validated and persists", async () => {
+  await page.goto("/settings?tab=policies");
+  const ctc = page.getByLabel("Minimum annual CTC in lakh rupees");
+  await expect(ctc).toHaveValue("8");
+  await ctc.fill("-1");
+  await expect(page.getByText("Enter a number from 0 to 200.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save changes" }).last()).toBeDisabled();
+  await ctc.fill("12");
+  await expect(page.getByText("₹12 LPA = ₹12,00,000 a year")).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).last().click();
+  await expect(page.getByText("Settings saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Minimum annual CTC in lakh rupees")).toHaveValue("12");
+  await axe(page);
+  // Restore the default so later steps see the standard policy.
+  await page.getByLabel("Minimum annual CTC in lakh rupees").fill("8");
+  await page.getByRole("button", { name: "Save changes" }).last().click();
+  await expect(page.getByText("Settings saved").first()).toBeVisible();
 });
 
 for (const path of ["/resume", "/applications", "/assistant", "/interviews", "/communications", "/automation", "/integrations", "/notifications", "/settings"]) {

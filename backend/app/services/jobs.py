@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -9,6 +10,7 @@ from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
+from app.domain import fx
 from app.domain import job_parsing as jp
 from app.domain.matching import SCORING_VERSION, JobFacts, compute_match
 from app.domain.salary_policy import SalaryFacts
@@ -176,7 +178,9 @@ def job_facts(job: Job) -> JobFacts:
             maximum=job.salary_max,
             currency=job.salary_currency,
             period=job.salary_period,
+            text=job.salary_text,
         ),
+        description=job.description_text or "",
     )
 
 
@@ -202,29 +206,96 @@ def visible_jobs_clause(db: Session, user_id: str) -> Any:
     )
 
 
-def ensure_matches(db: Session, user: User, job_ids: list[str] | None = None) -> int:
-    """(Re)compute match rows whose inputs changed. Deterministic, so caching by input hash is safe."""
+def policy_snapshot(user: User, fxc: fx.FxContext | None = None) -> dict[str, Any]:
+    """The policy a decision was made under; stored with every decision."""
+    p = salary_policy(user)
+    snap: dict[str, Any] = {
+        "min_ctc_lpa": p.min_ctc_lpa,
+        "allow_undisclosed_salary": p.allow_undisclosed_salary,
+        "min_stipend_monthly_inr": p.min_stipend_monthly_inr,
+        "allow_undisclosed_stipend": p.allow_undisclosed_stipend,
+        "engine": SCORING_VERSION,
+    }
+    table = fxc.table if fxc else None
+    snap["fx"] = table.meta() if table else None
+    return snap
+
+
+def _policy_key(snap: dict[str, Any] | None) -> str | None:
+    """Identity of the rules (not the exchange-rate snapshot, which changes daily)."""
+    if not snap:
+        return None
+    core = {k: v for k, v in snap.items() if k != "fx"}
+    return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+
+
+def is_outdated(user: User, match: JobMatch | None) -> bool:
+    return bool(match) and _policy_key(match.eligibility.get("policy")) != _policy_key(policy_snapshot(user))
+
+
+def _acted_job_ids(db: Session, user_id: str) -> set[str]:
+    return set(db.scalars(select(Application.job_id).where(Application.user_id == user_id))) | set(
+        db.scalars(select(SavedJob.job_id).where(SavedJob.user_id == user_id))
+    )
+
+
+def ensure_matches(db: Session, user: User, job_ids: list[str] | None = None, *, force: bool = False) -> int:
+    """(Re)compute match rows whose inputs changed. Deterministic, so caching by input hash is safe.
+
+    Jobs the user has saved or applied to keep the decision (and policy snapshot) they were evaluated
+    under when the *policy* changes, e.g. a new salary threshold. Such a kept decision is not recomputed
+    for any reason, including later profile corrections, until the user re-evaluates it (`force`), so
+    history isn't silently rewritten. While the policy is unchanged, profile corrections do refresh
+    decisions for every job, saved and applied ones included.
+    """
     cand = candidate_profile(db, user)
+    fxc = fx.current_context()
+    snap = policy_snapshot(user, fxc)
+    pkey = _policy_key(snap)
+    digest = hashlib.sha256(f"{cand.digest()}|{pkey}".encode()).hexdigest()
     policy = salary_policy(user)
-    digest = hashlib.sha256(f"{cand.digest()}|{policy}".encode()).hexdigest()
     q = select(Job).where(visible_jobs_clause(db, user.id))
     if job_ids is not None:
         q = select(Job).where(Job.id.in_(job_ids))
     existing = {m.job_id: m for m in db.scalars(select(JobMatch).where(JobMatch.user_id == user.id))}
+    acted = _acted_job_ids(db, user.id)
     now, n = utcnow(), 0
     for job in db.scalars(q):
         m = existing.get(job.id)
-        if m and m.profile_hash == digest and m.scoring_version == SCORING_VERSION and m.computed_at >= job.updated_at:
-            continue
-        r = compute_match(job_facts(job), cand, policy)
+        if m and not force:
+            if m.profile_hash == digest and m.scoring_version == SCORING_VERSION and m.computed_at >= job.updated_at:
+                continue
+            if job.id in acted and _policy_key(m.eligibility.get("policy")) != pkey:
+                continue  # historical decision under an earlier policy: re-evaluated only on request
+        r = compute_match(job_facts(job), cand, policy, fxc)
         data = r.as_dict()
         eligibility = data.pop("eligibility")
+        eligibility["policy"], eligibility["evaluated_at"] = snap, now.isoformat()
         if m is None:
             m = JobMatch(user_id=user.id, job_id=job.id)
             db.add(m)
         m.score, m.breakdown, m.eligibility = r.score, data, eligibility
         m.scoring_version, m.profile_hash, m.computed_at = SCORING_VERSION, digest, now
         n += 1
+    db.commit()
+    return n
+
+
+def reevaluate(db: Session, user: User, job_ids: list[str] | None = None, *, actor: str) -> int:
+    """Explicitly re-evaluate decisions kept from an earlier policy (all outdated ones by default)."""
+    if job_ids is None:
+        matches = db.scalars(select(JobMatch).where(JobMatch.user_id == user.id))
+        job_ids = [m.job_id for m in matches if is_outdated(user, m)]
+    if not job_ids:
+        return 0
+    n = ensure_matches(db, user, job_ids, force=True)
+    audit.record(
+        db,
+        user_id=user.id,
+        actor=actor,
+        action="eligibility.reevaluated",
+        meta={"jobs": len(job_ids), "policy": policy_snapshot(user)},
+    )
     db.commit()
     return n
 

@@ -1125,7 +1125,7 @@ The system must account for:\
 \f0\b\fs28 \cf0 FR-049: Daily Application Limit\
 \pard\pardeftab720\sa240\partightenfactor0
 
-\f1\b0\fs24 \cf0 Allow configurable application limits.\
+\f1\b0\fs24 \cf0 Allow configurable application limits. Each user sets a daily limit from 1 to 10,000 applications (default and maximum: 10,000), enforced by the backend and API, not only the interface. Every application still requires the user's approval.\
 \pard\pardeftab720\sa298\partightenfactor0
 
 \f0\b\fs36 \cf0 Salary Eligibility Rules\
@@ -1134,17 +1134,25 @@ The system must account for:\
 \f1\b0\fs24 \cf0 Default full-time salary policy:\
 \pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
 \ls32\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 Minimum verified CTC threshold: \uc0\u8377 8 LPA.\
+\outl0\strokewidth0 \strokec2 Minimum verified CTC threshold: configurable by each user in Settings, as total annual CTC in \uc0\u8377  lakh per annum (LPA). Default \uc0\u8377 8 LPA; allowed range 0 to 200 LPA with up to two decimals.\
+\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verified disclosed minimum strictly greater than the threshold: Eligible.\
+\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verified disclosed minimum equal to or below the threshold: Rejected. This includes ranges whose minimum is below the threshold, such as \uc0\u8377 6-12 LPA when the threshold is \uc0\u8377 8 LPA.\
+\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Only a verified maximum: Rejected if it is not above the threshold; otherwise manual review.\
 \ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
 \outl0\strokewidth0 \strokec2 Undisclosed salary: Eligible for consideration.\
 \ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 Verified disclosed minimum above the threshold: Eligible.\
-\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
 \outl0\strokewidth0 \strokec2 Advertised but unverified salary: Manual review required.\
+\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Missing or ambiguous currency (for example a bare "$"): Manual review required. INR is never assumed.\
+\ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Foreign currency (for example USD or PLN): converted to INR only with an operator-supplied exchange-rate snapshot that records its source and date and is no older than the configured maximum age (default 7 days). Otherwise manual review required. Salaries are normalised to annual INR before comparison.\
 \ls32\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
 \outl0\strokewidth0 \strokec2 Internship stipend: Governed by a separate configurable policy.\
 \pard\pardeftab720\sa240\partightenfactor0
-\cf0 Users can change the threshold in settings.\
+\cf0 Users can change the threshold in settings at any time; it is stored with their account. A change applies to new eligibility decisions. Decisions for jobs the user has saved or applied to keep the policy they were made under until the user explicitly re-evaluates them.\
 \pard\pardeftab720\sa298\partightenfactor0
 
 \f0\b\fs36 \cf0 Acceptance Criteria\
@@ -1594,7 +1602,7 @@ The system must account for:\
 \f0\b\fs28 \cf0 FR-089: Approval Tools\
 \pard\pardeftab720\sa240\partightenfactor0
 
-\f1\b0\fs24 \cf0 Expose controlled approval operations.\
+\f1\b0\fs24 \cf0 Expose controlled approval operations. MCP and AI clients may request approval and read approval status, but can never grant or reject an approval. Only an authenticated human action in the JobPilot interface decides approvals.\
 \pard\pardeftab720\sa280\partightenfactor0
 
 \f0\b\fs28 \cf0 FR-090: Career Resources\

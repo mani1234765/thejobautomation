@@ -124,6 +124,8 @@ export interface Settings {
   notify_whatsapp: boolean;
   whatsapp_number: string | null;
   daily_summary: boolean;
+  /** Stored values that were out of range and are shown/applied as the nearest valid value. */
+  normalized?: { field: string; stored: unknown; effective: unknown; reason: string }[];
 }
 
 export interface MatchFactor {
@@ -146,11 +148,39 @@ export interface MatchBreakdown {
   scoring_version: string;
 }
 
+export interface EligibilityCheck {
+  rule: "SALARY" | "STIPEND" | "SKILLS" | "EXPERIENCE" | "SENIORITY" | "LOCATION" | "EMPLOYMENT";
+  outcome: "pass" | "reject" | "review" | "unknown";
+  code: string;
+  explanation: string;
+  evidence: string[];
+  missing: string[];
+}
+
+export interface EligibilityPolicy {
+  min_ctc_lpa: number;
+  allow_undisclosed_salary: boolean;
+  min_stipend_monthly_inr: number | null;
+  allow_undisclosed_stipend: boolean;
+  engine: string;
+  fx: { source: string; as_of: string } | null;
+}
+
 export interface Eligibility {
   status: "eligible" | "review" | "ineligible";
   salary: { decision: string; reason: string };
   blocks: string[];
   confidence: number;
+  // Explainable verdicts (engine 2026.11.3+). Older decisions kept for history may lack these.
+  verdict?: "ELIGIBLE" | "REJECTED" | "MANUAL_REVIEW";
+  summary?: string;
+  checks?: EligibilityCheck[];
+  reason_codes?: string[];
+  decided_by?: string[];
+  missing_information?: string[];
+  rules?: Record<string, string>;
+  policy?: EligibilityPolicy;
+  evaluated_at?: string;
 }
 
 export interface JobCard {
@@ -192,6 +222,7 @@ export interface JobDetail extends JobCard {
   description_text: string;
   match: MatchBreakdown | null;
   eligibility_detail: Eligibility | null;
+  eligibility_outdated: boolean;
   duplicate_of_id: string | null;
 }
 

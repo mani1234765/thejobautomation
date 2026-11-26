@@ -56,6 +56,8 @@ class JobDetail(JobCard):
     description_text: str
     match: dict[str, Any] | None
     eligibility_detail: dict[str, Any] | None
+    # True when this decision was made under an earlier policy (e.g. a different salary threshold).
+    eligibility_outdated: bool = False
     duplicate_of_id: str | None
 
 
@@ -174,6 +176,7 @@ def _detail(db: DB, p: Principal, job: Job) -> JobDetail:
         description_text=job.description_text,
         match=m.breakdown if m else None,
         eligibility_detail=m.eligibility if m else None,
+        eligibility_outdated=svc.is_outdated(p.user, m),
         duplicate_of_id=job.duplicate_of_id,
     )
 
@@ -196,6 +199,23 @@ def compare_jobs(ids: str, db: DB, p: CurrentPrincipal) -> list[JobDetail]:
 @router.get("/jobs/{job_id}", response_model=JobDetail)
 def job_detail(job_id: str, db: DB, p: CurrentPrincipal) -> JobDetail:
     return _detail(db, p, _visible(db, p, job_id))
+
+
+class ReevaluateOut(BaseModel):
+    reevaluated: int
+
+
+@router.post("/jobs/reevaluate", response_model=ReevaluateOut)
+def reevaluate_all(db: DB, p: Principal = Depends(require_scope("jobs:write"))) -> ReevaluateOut:
+    """Re-evaluate every decision that was made under an earlier policy."""
+    return ReevaluateOut(reevaluated=svc.reevaluate(db, p.user, actor=p.actor))
+
+
+@router.post("/jobs/{job_id}/reevaluate", response_model=JobDetail)
+def reevaluate_job(job_id: str, db: DB, p: Principal = Depends(require_scope("jobs:write"))) -> JobDetail:
+    job = _visible(db, p, job_id)
+    svc.reevaluate(db, p.user, [job.id], actor=p.actor)
+    return _detail(db, p, job)
 
 
 class SaveState(BaseModel):

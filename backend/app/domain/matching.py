@@ -29,11 +29,13 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 
-from app.domain import taxonomy
+from app.domain import fx, taxonomy
+from app.domain.eligibility import evaluate_job
 from app.domain.job_parsing import normalize_title
-from app.domain.salary_policy import SalaryFacts, SalaryPolicy, evaluate
+from app.domain.locations import mentions_city
+from app.domain.salary_policy import SalaryFacts, SalaryPolicy
 
-SCORING_VERSION = "2026.11.2"
+SCORING_VERSION = "2026.11.3"  # .3: explainable eligibility verdicts, strict salary threshold
 NEUTRAL = 50.0
 WEIGHTS = {"skills": 45, "experience": 20, "role": 15, "location": 10, "level": 5, "employment": 5}
 
@@ -77,6 +79,7 @@ class JobFacts:
     employment_type: str | None
     is_internship: bool
     salary: SalaryFacts
+    description: str = ""  # plain-text listing, used to quote evidence
 
 
 @dataclass
@@ -190,8 +193,7 @@ def _location_factor(job: JobFacts, cand: CandidateProfile) -> Factor:
         return Factor("location", w, None, "The listing doesn't state a location or work mode.")
     if job.work_mode == "remote" and (not cand.work_modes or "remote" in cand.work_modes):
         return Factor("location", w, 1.0, "Remote role, matching your preference.")
-    loc = (job.location or "").lower()
-    city_hit = any(p.lower().split(",")[0].strip() in loc for p in cand.preferred_locations if p.strip())
+    city_hit = any(mentions_city(job.location, p) for p in cand.preferred_locations if p.strip())
     mode_ok = job.work_mode is None or not cand.work_modes or job.work_mode in cand.work_modes
     if city_hit and mode_ok:
         return Factor("location", w, 1.0, f"{job.location} is one of your preferred locations.")
@@ -248,7 +250,9 @@ def _employment_factor(job: JobFacts, cand: CandidateProfile) -> Factor:
     )
 
 
-def compute_match(job: JobFacts, cand: CandidateProfile, policy: SalaryPolicy) -> MatchResult:
+def compute_match(
+    job: JobFacts, cand: CandidateProfile, policy: SalaryPolicy, fxc: fx.FxContext | None = None
+) -> MatchResult:
     skills_f, matched, related, missing_req, missing_pref = _skills_factor(job, cand)
     factors = [
         skills_f,
@@ -273,17 +277,10 @@ def compute_match(job: JobFacts, cand: CandidateProfile, policy: SalaryPolicy) -
     if unverified:
         concerns.append("Not yet verified in your profile: " + ", ".join(unverified[:6]))
 
-    salary = evaluate(job.salary, policy)
-    hard_blocks: list[str] = []
-    if salary.decision == "ineligible":
-        hard_blocks.append(salary.reason)
-    exp = factors[1]
-    if exp.score is not None and exp.score < 0.4:
-        hard_blocks.append(exp.summary)
-    if factors[5].score == 0.0:
-        hard_blocks.append(factors[5].summary)
-    status = "ineligible" if hard_blocks else ("review" if salary.decision == "manual_review" else "eligible")
-
+    verdict = evaluate_job(
+        job, cand, policy, matched=matched, related=related, missing_required=missing_req, fxc=fxc
+    ).as_dict()
+    salary = next(c for c in verdict["checks"] if c["rule"] in ("SALARY", "STIPEND"))
     return MatchResult(
         score=score,
         factors=factors,
@@ -295,9 +292,13 @@ def compute_match(job: JobFacts, cand: CandidateProfile, policy: SalaryPolicy) -
         strengths=strengths,
         concerns=concerns,
         eligibility={
-            "status": status,
-            "salary": {"decision": salary.decision, "reason": salary.reason},
-            "blocks": hard_blocks,
+            **verdict,
+            # Kept for existing consumers (filters, dashboard, automations, MCP).
+            "salary": {
+                "decision": {"pass": "eligible", "reject": "ineligible", "review": "manual_review"}[salary["outcome"]],
+                "reason": salary["explanation"],
+            },
+            "blocks": [c["explanation"] for c in verdict["checks"] if c["outcome"] == "reject"],
             "confidence": confidence,
             "known_factor_score": round(known_score),
         },

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import nh3
 
-from app.domain import taxonomy
+from app.domain import fx, taxonomy
 
 _SPACE = re.compile(r"\s+")
 
@@ -135,27 +135,15 @@ class SalaryParse:
     text: str | None = None
 
 
-_CUR = {
-    "$": "USD",
-    "usd": "USD",
-    "₹": "INR",
-    "inr": "INR",
-    "rs": "INR",
-    "rs.": "INR",
-    "€": "EUR",
-    "eur": "EUR",
-    "£": "GBP",
-    "gbp": "GBP",
-    "cad": "CAD",
-    "sgd": "SGD",
-    "aud": "AUD",
-}
+# Currency markers recognised in pay text. Identification (and the refusal to guess for a bare "$") lives
+# in fx.identify; the marker itself is kept so ambiguity can be reported.
+_CUR_MARKER = r"(?:us\$|ca?\$|au?\$|s\$|\$|₹|€|£|zł|usd|inr|eur|gbp|cad|sgd|aud|pln)"
 _LPA = re.compile(
     r"(?:₹|inr|rs\.?)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|–|to)\s*(\d{1,3}(?:\.\d+)?)\s*(?:lpa|lakhs?(?: per annum)?)", re.I
 )
 _LPA_SINGLE = re.compile(r"(?:₹|inr|rs\.?)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:lpa|lakhs? per annum)", re.I)
 _MONEY_RANGE = re.compile(
-    r"(\$|₹|€|£|usd|inr|eur|gbp|cad|sgd|aud)\s?(\d[\d,]*(?:\.\d+)?)\s*(k)?\s*(?:-|–|to)\s*(?:\$|₹|€|£|usd|inr|eur|gbp|cad|sgd|aud)?\s?(\d[\d,]*(?:\.\d+)?)\s*(k)?"
+    rf"({_CUR_MARKER})\s?(\d[\d,]*(?:\.\d+)?)\s*(k)?\s*(?:-|–|to)\s*{_CUR_MARKER}?\s?(\d[\d,]*(?:\.\d+)?)\s*(k)?"
     r"(?:\s*(?:per|/|a)\s*(year|yr|annum|month|mo|hour|hr))?",
     re.I,
 )
@@ -171,7 +159,7 @@ def parse_salary_text(text: str) -> SalaryParse:
         return SalaryParse(v, v, "INR", "year", m.group(0).strip())
     m = _MONEY_RANGE.search(text)
     if m:
-        cur = _CUR.get(m.group(1).lower())
+        cur = fx.identify(m.group(1)) or (m.group(1) if m.group(1) in fx.AMBIGUOUS else None)
         lo = float(m.group(2).replace(",", "")) * (1000 if m.group(3) else 1)
         hi = float(m.group(4).replace(",", "")) * (1000 if m.group(5) or m.group(3) else 1)
         per = (m.group(6) or "").lower()

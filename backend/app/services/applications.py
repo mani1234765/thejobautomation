@@ -25,6 +25,7 @@ from app.ai.guards import untrusted
 from app.ai.provider import AIUnavailable, LLMError
 from app.db import utcnow
 from app.domain.application_state import InvalidTransition, check_transition
+from app.domain.salary_policy import MAX_DAILY_APPLICATIONS
 from app.models import (
     Application,
     ApplicationAnswer,
@@ -37,6 +38,7 @@ from app.models import (
     Resume,
     ResumeVersion,
     User,
+    UserSettings,
 )
 from app.services import audit
 
@@ -419,6 +421,9 @@ def decide(
     note: str | None = None,
     scheduled_for: datetime | None = None,
 ) -> ApprovalRequest:
+    if via != "web":
+        # Defence in depth: only a human in the JobPilot UI may decide (the route also enforces this).
+        raise ApplicationError("Approvals can only be decided by you in JobPilot, not by an API token or AI client.")
     if req.status != "pending":
         raise ApplicationError(f"This approval request is already {req.status}.")
     app = db.get(Application, req.application_id)
@@ -448,6 +453,21 @@ def decide(
 
 
 # ── Submission tracking ────────────────────────────────────────────────────────────────────────
+def daily_limit(user: User) -> int:
+    """The user's limit, within 1–MAX_DAILY_APPLICATIONS even if a stored value is out of range."""
+    from app.services.policy_settings import effective
+
+    return min(int(effective(user.settings).values["daily_application_limit"]), MAX_DAILY_APPLICATIONS)
+
+
+def lock_submission_quota(db: Session, user: User) -> None:
+    """Take a row lock on the user's settings row for the rest of the transaction (PostgreSQL
+    `SELECT … FOR UPDATE`). Concurrent submission starts for the same user wait here until the first
+    commits, so each one counts the others' committed starts. SQLite ignores FOR UPDATE but allows only
+    one writer at a time, which is sufficient for the single-process development setup."""
+    db.execute(select(UserSettings.id).where(UserSettings.user_id == user.id).with_for_update())
+
+
 def submissions_last_24h(db: Session, user_id: str) -> int:
     since = utcnow() - timedelta(hours=24)
     return (
@@ -479,13 +499,17 @@ def record_submission(
         select(ApprovalRequest).where(ApprovalRequest.application_id == app.id, ApprovalRequest.status == "approved")
     )
     if action == "start":
+        # Serialise submission starts per user, then re-read state under the lock: the count-and-insert
+        # below is then atomic, so simultaneous requests can't exceed the limit or double-start an app.
+        lock_submission_quota(db, user)
+        db.refresh(app)
         if app.submission_state == "attempted":
             return app  # idempotent: a retry of "start" never creates a second attempt
         if app.status not in ("approved", "failed") or approved is None:
             raise ApplicationError("Approve this application before submitting it.")
         if _snapshot_hash(snapshot(app)) != _snapshot_hash(approved.snapshot):
             raise ApplicationError("The application changed after it was approved. Request approval again.")
-        limit = user.settings.daily_application_limit
+        limit = daily_limit(user)
         if submissions_last_24h(db, user.id) >= limit:
             raise ApplicationError(f"Daily limit of {limit} submissions reached. Try again later or raise the limit.")
         if app.status == "failed":

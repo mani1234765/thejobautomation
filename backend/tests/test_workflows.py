@@ -2,8 +2,11 @@ import io
 
 import pytest
 from docx import Document
+from sqlalchemy import select
 
+from app.db import session_factory
 from app.integrations.sources import providers
+from app.models import AuditEvent
 from tests.fixtures import build_docx_resume
 from tests.helpers import JD_BACKEND, FakeAdapter, ScriptedLLM, job
 
@@ -292,11 +295,22 @@ def test_mcp_token_cannot_bypass_approval(user_api, fake_board):
     c = TestClient(create_app(), headers={"Authorization": f"Bearer {read_tok}"})
     assert c.post(f"/api/v1/approvals/{ap['id']}/decide", json={"approve": True}).status_code == 403
     assert c.post(f"/api/v1/applications/{aid}/transition", json={"to": "approved"}).status_code == 400
-    ap_tok = user_api.post("/api/v1/auth/tokens", json={"name": "a", "scopes": ["approvals:write"]}).json()["token"]
-    c2 = TestClient(create_app(), headers={"Authorization": f"Bearer {ap_tok}"})
+    # No token can approve, whatever scopes it holds: "approvals:write" no longer exists…
+    bad = user_api.post("/api/v1/auth/tokens", json={"name": "a", "scopes": ["approvals:write"]})
+    assert bad.status_code == 422
+    every = ["read", "jobs:write", "resumes:write", "applications:write", "automation:write"]
+    all_tok = user_api.post("/api/v1/auth/tokens", json={"name": "all", "scopes": every}).json()["token"]
+    c2 = TestClient(create_app(), headers={"Authorization": f"Bearer {all_tok}"})
     r = c2.post(f"/api/v1/approvals/{ap['id']}/decide", json={"approve": True})
-    assert r.status_code == 200 and r.json()["decided_via"] == "mcp"
-    # Even with approval granted, an MCP client can never submit.
+    assert r.status_code == 403
+    assert user_api.get(f"/api/v1/applications/{aid}").json()["status"] == "awaiting_approval"
+    # …only the signed-in user, through the web UI session, can — and that decision is audited.
+    r = user_api.post(f"/api/v1/approvals/{ap['id']}/decide", json={"approve": True})
+    assert r.status_code == 200 and r.json()["decided_via"] == "web"
+    with session_factory()() as db:
+        ev = db.scalar(select(AuditEvent).where(AuditEvent.action == "approval.approved"))
+        assert ev is not None and ev.actor == "user" and ev.meta["via"] == "web"
+    # Even after approval, an MCP client can never submit.
     assert c2.post(f"/api/v1/applications/{aid}/submission", json={"action": "start"}).status_code == 403
 
 

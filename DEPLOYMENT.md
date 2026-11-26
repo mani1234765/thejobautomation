@@ -46,6 +46,7 @@ Required (the app refuses to boot in production without the starred items):
 | `JOBPILOT_PUBLIC_APP_URL` | `https://app.<domain>` — also the OAuth redirect base |
 | `JOBPILOT_STORAGE_DIR` | Mount point of the private file volume |
 | `JOBPILOT_API_ORIGIN` | Web → API internal URL (web service only) |
+| `JOBPILOT_FX_RATES_FILE` | Optional. JSON exchange-rate snapshot (`source`, `as_of`, `rates_to_inr`) used to compare foreign pay with users' INR thresholds. Refresh it from a named source (e.g. RBI reference rates) at least every `JOBPILOT_FX_MAX_AGE_DAYS` (default 7); stale or missing → foreign pay goes to manual review. No paid API is used |
 | AI / Gmail / WhatsApp variables | Optional; see `.env.example` |
 
 Client IPs (for rate limits and audit) come from `JOBPILOT_TRUSTED_PROXY_HOPS`, the number of proxies in

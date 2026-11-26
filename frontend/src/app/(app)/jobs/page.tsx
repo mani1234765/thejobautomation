@@ -53,8 +53,8 @@ function JobRow({ job, active, selected, onOpen, onToggleCompare }: {
           <span className="truncate"><span className="font-medium text-fg/80">{job.company}</span>{meta.length ? ` · ${meta.join(" · ")}` : ""}</span>
           {job.eligibility === "review" && (
             <span className="relative z-10 shrink-0">
-              <Tooltip content="Pay needs your review (not in INR, or only advertised in the text)">
-                <Wallet className="size-3 text-warning" aria-label="Pay needs review" />
+              <Tooltip content="Needs your review: open the job to see which rule and why">
+                <Wallet className="size-3 text-warning" aria-label="Needs your review" />
               </Tooltip>
             </span>
           )}

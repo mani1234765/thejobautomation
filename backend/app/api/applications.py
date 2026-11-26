@@ -293,9 +293,9 @@ class DecisionIn(BaseModel):
 
 
 @router.post("/approvals/{approval_id}/decide", response_model=ApprovalOut)
-def decide(
-    approval_id: str, body: DecisionIn, db: DB, p: Principal = Depends(require_scope("approvals:write"))
-) -> ApprovalOut:
+def decide(approval_id: str, body: DecisionIn, db: DB, p: Principal = Depends(web_only)) -> ApprovalOut:
+    """Approve or reject. Human-only: requires a signed-in browser session with CSRF protection. API tokens
+    (MCP clients, scripts, AI agents) are refused, whatever scopes they hold."""
     req = get_owned(db, ApprovalRequest, approval_id, p.id)
     try:
         r = svc.decide(
@@ -303,7 +303,7 @@ def decide(
             p.user,
             req,
             approve=body.approve,
-            via="web" if p.via == "web" else "mcp",
+            via=p.via,
             actor=p.actor,
             note=body.note,
             scheduled_for=body.scheduled_for,

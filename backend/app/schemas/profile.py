@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
+from app.domain.salary_policy import MAX_DAILY_APPLICATIONS, MAX_MIN_CTC_LPA
+
 WorkMode = Literal["remote", "hybrid", "onsite"]
 ExperienceLevel = Literal["fresher", "internship", "0-1", "1-2", "2-3", "3-5", "5+"]
 EmploymentType = Literal["full_time", "part_time", "contract", "internship"]
@@ -68,11 +70,12 @@ class ProfileOut(ORM):
 
 
 class SettingsIn(BaseModel):
-    min_ctc_lpa: float = Field(ge=0, le=500)
+    # Minimum annual CTC in ₹ lakh (LPA). A verified salary minimum must be strictly greater than this.
+    min_ctc_lpa: float = Field(ge=0, le=MAX_MIN_CTC_LPA, allow_inf_nan=False)
     allow_undisclosed_salary: bool
-    min_stipend_monthly_inr: float | None = Field(default=None, ge=0, le=1_000_000)
+    min_stipend_monthly_inr: float | None = Field(default=None, ge=0, le=1_000_000, allow_inf_nan=False)
     allow_undisclosed_stipend: bool
-    daily_application_limit: int = Field(ge=1, le=100)
+    daily_application_limit: int = Field(ge=1, le=MAX_DAILY_APPLICATIONS)
     require_approval: bool
     min_match_score: int = Field(ge=0, le=100)
     ai_model_override: str | None = Field(default=None, max_length=120)
@@ -81,6 +84,12 @@ class SettingsIn(BaseModel):
     notify_whatsapp: bool
     whatsapp_number: str | None = Field(default=None, pattern=r"^\+?[1-9]\d{7,14}$")
     daily_summary: bool
+
+    @field_validator("min_ctc_lpa")
+    @classmethod
+    def _two_decimals(cls, v: float) -> float:
+        # ₹0.01 LPA = ₹1,000: finer precision isn't meaningful and would make boundaries confusing.
+        return round(v, 2)
 
     @field_validator("require_approval")
     @classmethod
@@ -93,7 +102,9 @@ class SettingsIn(BaseModel):
 
 
 class SettingsOut(ORM, SettingsIn):
-    pass
+    # Stored values that were out of range and are shown (and applied) as the nearest valid value:
+    # [{field, stored, effective, reason}]. Saving Settings stores the effective values.
+    normalized: list[dict] = Field(default_factory=list)
 
 
 def _clean_lines(v: list[str]) -> list[str]:

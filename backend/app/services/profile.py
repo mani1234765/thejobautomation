@@ -54,12 +54,14 @@ def completeness(user: User, n_work: int, n_edu: int, n_skills: int) -> dict:
 
 
 def salary_policy(user: User) -> SalaryPolicy:
-    s = user.settings
+    from app.services.policy_settings import effective
+
+    v = effective(user.settings).values  # out-of-range stored values are normalised, never used raw
     return SalaryPolicy(
-        min_ctc_lpa=s.min_ctc_lpa,
-        allow_undisclosed_salary=s.allow_undisclosed_salary,
-        min_stipend_monthly_inr=s.min_stipend_monthly_inr,
-        allow_undisclosed_stipend=s.allow_undisclosed_stipend,
+        min_ctc_lpa=v["min_ctc_lpa"],
+        allow_undisclosed_salary=v["allow_undisclosed_salary"],
+        min_stipend_monthly_inr=v["min_stipend_monthly_inr"],
+        allow_undisclosed_stipend=v["allow_undisclosed_stipend"],
     )
 
 

@@ -44,7 +44,7 @@ from app.schemas.profile import (
 )
 from app.security.core import verify_password
 from app.security.uploads import get_file_store
-from app.services import audit
+from app.services import audit, policy_settings
 from app.services import profile as svc
 from app.services import resume_review as review_svc
 
@@ -83,7 +83,8 @@ def complete_onboarding(db: DB, p: Principal = Depends(web_only)) -> None:
 
 @router.get("/settings", response_model=SettingsOut)
 def get_settings_(p: CurrentPrincipal) -> SettingsOut:
-    return SettingsOut.model_validate(p.user.settings)
+    eff = policy_settings.effective(p.user.settings)
+    return SettingsOut.model_validate({**eff.values, "normalized": eff.normalized})
 
 
 @router.put("/settings", response_model=SettingsOut)

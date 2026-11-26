@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, IdMixin, TimestampMixin, UTCDateTime
+from app.domain.salary_policy import DEFAULT_MIN_CTC_LPA, MAX_DAILY_APPLICATIONS
 
 
 class User(IdMixin, TimestampMixin, Base):
@@ -64,12 +65,12 @@ class UserSettings(IdMixin, TimestampMixin, Base):
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     # Salary policy (full-time) — see domain/salary_policy.py
-    min_ctc_lpa: Mapped[float] = mapped_column(Float, default=8.0)
+    min_ctc_lpa: Mapped[float] = mapped_column(Float, default=DEFAULT_MIN_CTC_LPA)
     allow_undisclosed_salary: Mapped[bool] = mapped_column(Boolean, default=True)
     # Internship stipend policy is separate from full-time CTC.
     min_stipend_monthly_inr: Mapped[float | None] = mapped_column(Float)
     allow_undisclosed_stipend: Mapped[bool] = mapped_column(Boolean, default=True)
-    daily_application_limit: Mapped[int] = mapped_column(Integer, default=10)
+    daily_application_limit: Mapped[int] = mapped_column(Integer, default=MAX_DAILY_APPLICATIONS)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     min_match_score: Mapped[int] = mapped_column(Integer, default=55)
     ai_model_override: Mapped[str | None] = mapped_column(String(120))

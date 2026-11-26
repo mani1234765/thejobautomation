@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     whatsapp_access_token: str | None = None
     whatsapp_phone_number_id: str | None = None
 
+    # Exchange-rate snapshot (JSON with source, as_of and rates_to_inr) used to compare foreign pay with
+    # the INR salary threshold. Unset or older than fx_max_age_days → foreign pay goes to manual review.
+    fx_rates_file: str | None = None
+    fx_max_age_days: int = Field(default=7, ge=1, le=90)
+
     job_source_timeout_seconds: float = 20.0
     worker_poll_seconds: float = 3.0
 

@@ -12,7 +12,7 @@ import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, Card, CardHeader, Field, Input, Skeleton } from "@/components/ui/primitives";
 import { Callout, PageHeader } from "@/components/ui/states";
 import { api } from "@/lib/api";
-import { formatDateTime, relativeTime } from "@/lib/format";
+import { cn, formatDateTime, relativeTime } from "@/lib/format";
 import { keys, useAction, useAiStatus, useMe, useSettings, useTokens } from "@/lib/queries";
 import type { ApiToken, Settings } from "@/lib/types";
 
@@ -34,46 +34,73 @@ function useSettingsForm() {
     invalidate: [keys.settings, keys.dashboard, ["jobs"]], success: "Settings saved", onSuccess: () => setEdited(null),
   });
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => d && setEdited({ ...d, [k]: v });
-  return { d, set, save, dirty: !!edited && JSON.stringify(edited) !== JSON.stringify(data) };
+  // Normalised (out-of-range) stored values can be saved as-is to repair them.
+  return { d, set, save, dirty: (!!edited && JSON.stringify(edited) !== JSON.stringify(data)) || !!data?.normalized?.length };
 }
 
 function SaveBar({ dirty, loading, onSave }: { dirty: boolean; loading: boolean; onSave: () => void }) {
   return <div className="flex justify-end border-t border-border bg-surface-2 px-4 py-2.5 rounded-b-lg"><Button variant="primary" size="sm" disabled={!dirty} loading={loading} onClick={onSave}>Save changes</Button></div>;
 }
 
+// Mirrors the API limits (backend/app/domain/salary_policy.py); the API enforces them.
+const MAX_MIN_CTC_LPA = 200;
+const MAX_DAILY = 10_000;
+const ctcValid = (v: number) => Number.isFinite(v) && v >= 0 && v <= MAX_MIN_CTC_LPA;
+
 function Policies() {
   const { d, set, save, dirty } = useSettingsForm();
   if (!d) return <Skeleton className="h-80" />;
   const num = (v: string) => (v === "" ? 0 : Number(v));
+  const normalized = d.normalized ?? [];
   return (
     <div className="flex flex-col gap-5">
+      {normalized.length > 0 && (
+        <Callout tone="warning" title="Some saved settings were out of range">
+          <ul className="list-disc pl-4">
+            {normalized.map((n) => <li key={n.field}><span className="font-mono text-2xs">{n.field}</span>: saved {String(n.stored)}, using {String(n.effective)} ({n.reason}).</li>)}
+          </ul>
+          <p className="mt-1">These values are already in effect. Save to store them.</p>
+        </Callout>
+      )}
       <Card>
-        <CardHeader title="Full-time salary policy" description="Applied to every job's eligibility. Disclosed pay is compared in INR; other currencies go to manual review." />
-        <Row title="Minimum verified CTC" description="Jobs whose verified maximum is below this are marked outside your criteria.">
-          <div className="flex items-center gap-2"><span className="text-xs text-fg-muted">₹</span><Input type="number" min={0} className="w-24" value={d.min_ctc_lpa} onChange={(e) => set("min_ctc_lpa", num(e.target.value))} /><span className="text-xs text-fg-muted">LPA</span></div>
+        <CardHeader title="Full-time salary policy" description="Applied to every new eligibility decision. Pay is converted to annual INR first; pay in another currency is only converted with a fresh, documented exchange rate, otherwise it goes to manual review." />
+        <Row title="Minimum annual CTC" description={<>A job is eligible on salary only if its <span className="font-medium text-fg">verified minimum</span> is strictly greater than this. ₹ lakh per annum (LPA), total annual CTC; 0–{MAX_MIN_CTC_LPA} LPA, up to 2 decimals.</>}>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-fg-muted">₹</span>
+              <Input id="min-ctc" type="number" inputMode="decimal" min={0} max={MAX_MIN_CTC_LPA} step={0.01} className="w-24" aria-label="Minimum annual CTC in lakh rupees" aria-describedby="min-ctc-hint"
+                aria-invalid={!ctcValid(d.min_ctc_lpa)} value={Number.isNaN(d.min_ctc_lpa) ? "" : d.min_ctc_lpa}
+                onChange={(e) => set("min_ctc_lpa", e.target.value === "" ? Number.NaN : Number(e.target.value))} />
+              <span className="text-xs text-fg-muted">LPA / year</span>
+            </div>
+            <p id="min-ctc-hint" className={cn("text-2xs", ctcValid(d.min_ctc_lpa) ? "text-fg-subtle" : "text-danger")} role={ctcValid(d.min_ctc_lpa) ? undefined : "alert"}>
+              {ctcValid(d.min_ctc_lpa) ? `₹${d.min_ctc_lpa} LPA = ₹${Math.round(d.min_ctc_lpa * 100000).toLocaleString("en-IN")} a year` : `Enter a number from 0 to ${MAX_MIN_CTC_LPA}.`}
+            </p>
+          </div>
         </Row>
+        <p className="border-t border-border px-4 py-3 text-xs text-fg-muted">Changing this applies to new decisions. Jobs you&apos;ve saved or applied to keep the decision they were made with until you choose <span className="font-medium text-fg">Re-evaluate</span> on the job.</p>
         <Row title="Allow jobs with undisclosed salary" description="Most listings don't publish pay. Turning this off sends them to manual review.">
-          <Switch checked={d.allow_undisclosed_salary} onCheckedChange={(v) => set("allow_undisclosed_salary", v)} />
+          <Switch aria-label="Allow jobs with undisclosed salary" checked={d.allow_undisclosed_salary} onCheckedChange={(v) => set("allow_undisclosed_salary", v)} />
         </Row>
         <Row title="Advertised but unverified pay" description="Pay mentioned only in description text always needs your review."><Badge tone="warning">Manual review</Badge></Row>
       </Card>
       <Card>
         <CardHeader title="Internship stipend policy" description="Separate from full-time CTC rules." />
         <Row title="Minimum monthly stipend" description="Leave empty for no minimum.">
-          <div className="flex items-center gap-2"><span className="text-xs text-fg-muted">₹</span><Input type="number" min={0} className="w-28" value={d.min_stipend_monthly_inr ?? ""} onChange={(e) => set("min_stipend_monthly_inr", e.target.value === "" ? null : Number(e.target.value))} /><span className="text-xs text-fg-muted">/ month</span></div>
+          <div className="flex items-center gap-2"><span className="text-xs text-fg-muted">₹</span><Input type="number" min={0} className="w-28" aria-label="Minimum monthly stipend in rupees" value={d.min_stipend_monthly_inr ?? ""} onChange={(e) => set("min_stipend_monthly_inr", e.target.value === "" ? null : Number(e.target.value))} /><span className="text-xs text-fg-muted">/ month</span></div>
         </Row>
-        <Row title="Allow internships with undisclosed stipend"><Switch checked={d.allow_undisclosed_stipend} onCheckedChange={(v) => set("allow_undisclosed_stipend", v)} /></Row>
+        <Row title="Allow internships with undisclosed stipend"><Switch aria-label="Allow internships with undisclosed stipend" checked={d.allow_undisclosed_stipend} onCheckedChange={(v) => set("allow_undisclosed_stipend", v)} /></Row>
       </Card>
       <Card>
         <CardHeader title="Applications" />
-        <Row title="Daily application limit" description="Maximum submissions started in any rolling 24 hours. Automations respect it too.">
-          <Input type="number" min={1} max={100} className="w-20" value={d.daily_application_limit} onChange={(e) => set("daily_application_limit", Math.max(1, num(e.target.value)))} />
+        <Row title="Daily application limit" description={`Maximum submissions started in any rolling 24 hours (1–${MAX_DAILY.toLocaleString("en-IN")}). Automations respect it too. Every application still needs your approval.`}>
+          <Input type="number" min={1} max={MAX_DAILY} className="w-24" aria-label="Daily application limit" value={d.daily_application_limit} onChange={(e) => set("daily_application_limit", Math.min(MAX_DAILY, Math.max(1, Math.round(num(e.target.value)))))} />
         </Row>
         <Row title="Matching threshold" description="Jobs at or above this score count as matching on your dashboard.">
-          <Input type="number" min={0} max={100} className="w-20" value={d.min_match_score} onChange={(e) => set("min_match_score", num(e.target.value))} />
+          <Input type="number" min={0} max={100} className="w-20" aria-label="Matching threshold score" value={d.min_match_score} onChange={(e) => set("min_match_score", num(e.target.value))} />
         </Row>
-        <Row title="Require approval before submitting" description="Always on. JobPilot never submits without your explicit approval."><Switch checked disabled aria-label="Approval required (always on)" /></Row>
-        <SaveBar dirty={dirty} loading={save.isPending} onSave={() => save.mutate(undefined)} />
+        <Row title="Require approval before submitting" description="Always on. Only you can approve, here in JobPilot — AI assistants and API tokens can ask for approval but never grant it."><Switch checked disabled aria-label="Approval required (always on)" /></Row>
+        <SaveBar dirty={dirty && ctcValid(d.min_ctc_lpa)} loading={save.isPending} onSave={() => save.mutate(undefined)} />
       </Card>
     </div>
   );
@@ -135,7 +162,6 @@ const SCOPES = [
   { value: "jobs:write", label: "Manage job sources and saved jobs" },
   { value: "resumes:write", label: "Create tailored resume drafts" },
   { value: "applications:write", label: "Create and prepare applications" },
-  { value: "approvals:write", label: "Approve or reject applications" },
   { value: "automation:write", label: "Pause and resume automations" },
 ];
 
@@ -213,7 +239,7 @@ function Security() {
                   </label>
                 ))}
               </fieldset>
-              {scopes.includes("approvals:write") && <Callout tone="warning">An AI client with this scope can approve applications when you ask it to. Submission still happens only in JobPilot.</Callout>}
+              <p className="text-xs text-fg-muted">No token can approve or submit applications — those always need you, here in JobPilot.</p>
             </div>
           )}
         </DialogContent>

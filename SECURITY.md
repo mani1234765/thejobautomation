@@ -15,7 +15,7 @@ Last reviewed: 2026-11-26 (V1.2 staging review; V1.1 review findings below).
   across instances.
 * Re-authentication: password change and account deletion require the current password.
 * Personal API tokens (MCP): random 256-bit, shown once, stored as SHA-256. They are scoped, revocable, and
-  their last use is tracked.
+  their last use is tracked. No scope can approve an application or change policies (settings are web-only).
 
 ## Authorization
 * Every user-owned row is fetched through `get_owned()`, which returns 404 (never 403) for other users' rows.
@@ -95,6 +95,16 @@ Last reviewed: 2026-11-26 (V1.2 staging review; V1.1 review findings below).
 * stdio by default. The HTTP transport binds **loopback only** (other hosts are refused) with DNS-rebinding
   protection, because it has no authentication of its own.
 * Error messages never echo the token (tested). Job descriptions returned to clients are labelled untrusted.
+
+## Phase 2 policy changes (2026-11-27)
+
+| # | Severity | Change | Status |
+|---|---|---|---|
+| 21 | Medium | **Approvals are human-only.** The MCP `approve_application` tool was removed (replaced by `request_approval`, which only creates a pending request); `POST /approvals/{id}/decide` requires a signed-in web session with CSRF (API tokens get 403 whatever their scopes); the service refuses non-web decisions as defence in depth; the `approvals:write` token scope no longer exists | **Fixed** (tests: backend, MCP) |
+| 22 | High (policy) | Salary threshold was inclusive (`≥ ₹8 LPA`) and verified pay without a currency was treated as INR | **Fixed**: strictly greater than the user's threshold; unknown or ambiguous currency (including a bare "$") → manual review; conversion only with a fresh, documented rate snapshot |
+| 25 | Medium | Concurrent submission starts could exceed the daily limit (count-then-insert without a lock) | **Fixed**: per-user `SELECT … FOR UPDATE` before counting; proven with simultaneous PostgreSQL requests (SQLite dev relies on its single-writer lock) |
+| 23 | Low | Daily application limit and salary threshold validated server-side (1–10,000; 0–200 LPA, finite, two decimals); API tokens can't change settings; a stored out-of-range limit is clamped at submission | **Fixed** (tests) |
+| 24 | Info | `gmail.compose` technically permits sending; JobPilot never calls a send endpoint (unchanged, documented in AUDIT_REPORT.md S1) | Open |
 
 ## V1.2 review findings
 

@@ -22,7 +22,8 @@ def sf(**kw):
         (sf(), "eligible"),
         (sf(disclosure="verified", minimum=900_000, maximum=1_200_000, currency="INR", period="year"), "eligible"),
         (sf(disclosure="verified", minimum=500_000, maximum=700_000, currency="INR", period="year"), "ineligible"),
-        (sf(disclosure="verified", minimum=600_000, maximum=1_000_000, currency="INR", period="year"), "manual_review"),
+        # Policy confirmed 2026-11-27: a verified minimum below the threshold is rejected (was manual review).
+        (sf(disclosure="verified", minimum=600_000, maximum=1_000_000, currency="INR", period="year"), "ineligible"),
         (
             sf(disclosure="advertised", minimum=1_000_000, maximum=1_200_000, currency="INR", period="year"),
             "manual_review",
@@ -73,8 +74,13 @@ def test_experience_extraction():
 def test_salary_extraction():
     s = jp.parse_salary_text("CTC: 12 - 18 LPA")
     assert (s.minimum, s.maximum, s.currency) == (1_200_000, 1_800_000, "INR")
+    # A bare "$" is ambiguous (USD, CAD, AUD, SGD…): it is kept as a marker and never assumed to be USD.
     s = jp.parse_salary_text("The base salary range is $150,000 - $190,000 per year")
-    assert (s.minimum, s.maximum, s.currency, s.period) == (150_000, 190_000, "USD", "year")
+    assert (s.minimum, s.maximum, s.currency, s.period) == (150_000, 190_000, "$", "year")
+    s = jp.parse_salary_text("The base salary range is US$150,000 - US$190,000 per year")
+    assert (s.minimum, s.maximum, s.currency) == (150_000, 190_000, "USD")
+    s = jp.parse_salary_text("Poland base salary range: zł 248,000 - zł 372,000")
+    assert (s.minimum, s.maximum, s.currency) == (248_000, 372_000, "PLN")
     s = jp.parse_salary_text("$211.4K - $290.6K")
     assert s.minimum == pytest.approx(211_400)
     assert jp.parse_salary_text("Competitive pay").minimum is None
