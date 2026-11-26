@@ -61,7 +61,7 @@ and anything further left (client-supplied) is ignored. uvicorn runs with `--no-
 
 ## 4. Pre-deployment checklist
 
-- [ ] CI green on the release commit (backend on PostgreSQL + Redis, MCP, frontend, E2E/CSP/axe, dependency audit)
+- [x] CI green on the release commit (GitHub run 45883858343, `bce77be`) (backend on PostgreSQL + Redis, MCP, frontend, E2E/CSP/axe, dependency audit)
 - [ ] Secrets created in the secrets manager; none in images, repo or CI logs
 - [ ] Managed PostgreSQL with automated backups + PITR (≥ 7 days), TLS enforced
 - [ ] Managed Redis reachable only from the private network
@@ -161,8 +161,9 @@ articles (largely vendor-authored, so treat the claims cautiously).
   `/api/v1/health/ready` reports `storage: not_writable` before any upload is attempted.
 
 ### Procedure (requires approval at each ⚑)
-1. ⚑ `render login` (owner), then `render blueprints validate render.yaml` (read-only).
-2. ⚑ Push the repository to GitHub (CI must be green).
+1. ⚑ `render login` (owner), then `render blueprints validate render.yaml` (read-only). Done 2026-11-27: only
+   `need_payment_info` — add a payment method first.
+2. ⚑ Push the repository to GitHub (CI must be green). Done: green.
 3. ⚑ Create the Blueprint from the repo in the Render Dashboard. Enter the `sync: false` values: generate the
    Fernet key locally; set `JOBPILOT_PUBLIC_APP_URL` to the web service URL.
 4. Wait for `/api/v1/health/ready` (via the web URL) to report `ready`; run the staging acceptance checklist

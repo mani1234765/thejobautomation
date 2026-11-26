@@ -1,20 +1,29 @@
 # JobPilot V1.2 — Staging & Release Validation Report
 
-Date: 2026-11-26 · No new product features · **Nothing pushed, deployed, sent or changed in any external
-account.**
+Date: 2026-11-27 · No new product features · Pushed to GitHub with approval. **Nothing deployed or sent; no
+other external account changed.**
 
 ## Final status: **BLOCKED**
 
-Everything that can be prepared and verified on this machine is **PASS**: repository hygiene, secret scan,
-security fixes, the staging configuration, and the full automated suite. Every remaining item needs an
-owner action: a GitHub repository URL and push approval, provider credentials, a Render login, and
-deployment approval. Production deployment decision: **NO-GO until staging acceptance passes.**
+**PASS**: repository hygiene, secret scan, security fixes, the staging configuration, the full automated
+suite, and now a **green CI run on GitHub**. Every remaining item needs an owner action: provider
+credentials, a payment method on the Render workspace, and deployment approval. Production deployment decision: **NO-GO until staging acceptance passes.**
 
 ## 1. GitHub CI — actual result
 
-**Not run on GitHub (BLOCKED).** No remote exists, the `gh` CLI isn't installed, and pushing needs your
-approval. The workflow passes `actionlint` and every job's commands pass locally (§6). No remote result is
-claimed.
+**PASS.** `main` pushed to github.com/mani1234765/thejobautomation after re-checking tracked files (no `.env`,
+credentials, tokens, databases, backups or real resumes). The repository's initial LICENSE commit was merged,
+not force-overwritten. [Run 45883858343](https://github.com/mani1234765/thejobautomation/actions/runs/45883858343)
+on `bce77be` (2026-11-26 19:28–19:32 UTC): **success**.
+
+| Job | Result |
+|---|---|
+| Dependency audit | success |
+| Backend (lint, migrations, tests on PostgreSQL + Redis) | success |
+| Frontend (lint, types, unit tests, build) | success |
+| MCP server | success |
+| E2E + accessibility + CSP (production build) | success |
+| Live integration verification (manual) | skipped (manual trigger, no secrets) |
 
 ## 2. Live integration verification
 
@@ -43,8 +52,11 @@ Internet ─TLS─▶ Render proxy ─▶ jobpilot-web (Next.js, public, /login 
                       jobpilot-db (Postgres 17, private)   jobpilot-kv (Key Value, noeviction, private)
 ```
 
-Not yet verified: `render blueprints validate` (the CLI login has expired; run `! render login`) and the first
-Docker image build (no Docker on this machine).
+`render blueprints validate` (2026-11-27, workspace `mani's workspace`): **`valid: false`, only
+`need_payment_info`** on all five resources (database, Key Value, private API, worker, web). No schema or
+field errors were reported. Private services, workers and disks have no free tier, so a payment method is
+required before the Blueprint can be applied. Still unverified: the first Docker image build (no Docker on
+this machine).
 
 ## 4. Security findings (this milestone)
 
@@ -95,8 +107,7 @@ Approval and security protections are unchanged; all approval and authorization 
 * Resume parsing accuracy has only been measured on synthetic resumes; no load testing yet.
 
 ## 8. Remaining production blockers (in order)
-1. **GitHub**: repository URL + push approval → a green remote CI run.
-2. **Credentials** in `.env` / Render Dashboard → `verify_integrations --live` with no FAIL.
-3. **Render**: `render login`, Blueprint validation, deployment approval.
-4. **Staging acceptance** (§5) all PASS, including the observed proxy hop count.
-5. Backup retention confirmed on the chosen Postgres plan; restore drill on staging.
+1. **Credentials** in `.env` / Render Dashboard → `verify_integrations --live` with no FAIL.
+2. **Render**: payment method on the workspace, deployment approval.
+3. **Staging acceptance** (§5) all PASS, including the observed proxy hop count.
+4. Backup retention confirmed on the chosen Postgres plan; restore drill on staging.

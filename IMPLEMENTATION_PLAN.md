@@ -89,7 +89,7 @@ The release-readiness report is in [RELEASE_READINESS_V1_1.md](RELEASE_READINESS
 | 4 | Verify assistant, rewording, cover letters, interview feedback | ⛔ BLOCKED (live) / ✅ PASS (offline) | All four paths tested with provider doubles; verifier runs them live once a key exists |
 | 5 | Google OAuth + Gmail read/classify/draft | ⛔ BLOCKED (live) / ✅ PASS (offline) | OAuth URL, exchange, refresh, revocation, sync + classification + acknowledgement, drafts — contract-tested |
 | 6 | WhatsApp with test credentials | ⛔ BLOCKED (live) / ✅ PASS (offline) | Request shape, error mapping, worker delivery states; verifier performs a read-only token check and sends only with an explicit flag |
-| 7 | CI | ✅ PASS (local) | `.github/workflows/ci.yml`; `actionlint` clean; every job's commands run locally. Not yet run on GitHub (no remote) |
+| 7 | CI | ✅ PASS | `.github/workflows/ci.yml`; green on GitHub (run 45883858343, V1.2) |
 | 8 | Content-Security-Policy | ✅ PASS | Nonce CSP; E2E asserts per-request nonce and zero violations on the production build |
 | 9 | Shared rate limiter | ✅ PASS | Redis sliding window; multi-instance and failure-mode tests against real Redis |
 | 10 | Security review | ✅ PASS | 9 findings fixed, 6 open/accepted with owners (SECURITY.md) |
@@ -103,25 +103,25 @@ The release-readiness report is in [RELEASE_READINESS_V1_1.md](RELEASE_READINESS
 | 1 | Inspect git status and structure | ✅ PASS | |
 | 1 | `.gitignore` covers .env, credentials, OAuth tokens, DBs, resumes, backups, logs, artifacts | ✅ PASS | Expanded ignore rules; staged-file review |
 | 1 | Secret scan | ✅ PASS | detect-secrets + key patterns: no real secrets. Found and fixed a placeholder-key acceptance bug (SECURITY #16) |
-| 1 | Clean initial commit | ✅ PASS | Local commits on `main`. **Not pushed** |
-| 2 | GitHub repository + remote | ⛔ BLOCKED | Needs the repository URL from the owner (no `gh` CLI here) |
-| 2 | Push + remote CI run | ⛔ BLOCKED | Needs explicit push approval; actual GitHub result unknown |
+| 1 | Clean initial commit | ✅ PASS | Commits on `main`; tracked files re-checked before push |
+| 2 | GitHub repository + remote | ✅ PASS | `origin` = github.com/mani1234765/thejobautomation. Its initial LICENSE commit was merged (`bce77be`), not overwritten |
+| 2 | Push + remote CI run | ✅ PASS | Pushed with approval (no force). [Run 45883858343](https://github.com/mani1234765/thejobautomation/actions/runs/45883858343) on `bce77be`: success — dependency audit, backend (PG + Redis), frontend, MCP, E2E/axe/CSP all green; manual live job skipped |
 | 3 | AI live (assistant, rewording, cover letter, interview feedback) | ⛔ BLOCKED | No provider credentials configured |
 | 3 | Gmail OAuth + draft (not sent) | ⛔ BLOCKED | No Google OAuth client |
 | 3 | WhatsApp config + test message | ⛔ BLOCKED | No Meta credentials; sending also needs explicit approval |
 | 4 | Hosting comparison & recommendation | ✅ PASS | Render recommended (DEPLOYMENT.md §10) |
-| 4 | Postgres, Redis, resume storage, worker, env vars | ✅ PASS (defined) | `render.yaml`, `backend/Dockerfile`; Blueprint not yet validated by the CLI (login expired) and image not built (no Docker locally) |
+| 4 | Postgres, Redis, resume storage, worker, env vars | ✅ PASS (defined) | `render.yaml`, `backend/Dockerfile`; `render blueprints validate`: only `need_payment_info` (no schema errors); image not built locally (no Docker) |
 | 4 | Trusted proxy hops | ✅ PASS | Hop-count client IP; Next.js pass-through measured; tests. Live hop count to confirm on staging |
 | 4 | HTTPS + security headers | ✅ PASS | HSTS, nonce CSP, frame/sniff/referrer/permissions headers (E2E) |
 | 4 | MCP HTTP authenticated | ✅ PASS | No MCP endpoint is deployed; local HTTP transport is loopback-only |
 | 4 | Backups & recovery | ✅ PASS (local) | Drill passes on PostgreSQL 17; staging run pending deployment |
-| 4 | Deploy staging | ⛔ BLOCKED | Awaiting explicit deployment approval (and Render login) |
+| 4 | Deploy staging | ⛔ BLOCKED | Needs a payment method on the Render workspace and explicit deployment approval |
 | 5 | Staging acceptance | ⛔ BLOCKED | Depends on deployment. Locally: full automated suite green (§6 of RELEASE_READINESS_V1_2.md) |
 
 ## 5. Next milestones
 1. **Credentials** (owner): AI key, Google OAuth client, WhatsApp Cloud API → run `verify_integrations --live`
    and flip the BLOCKED rows to PASS or FAIL.
-2. **Push to GitHub** and confirm CI is green there; add `integration-verification` environment secrets.
+2. Add `integration-verification` environment secrets on GitHub for the manual live job.
 3. Object storage for resumes (unblocks multi-instance API); audit-retention purge job.
 4. Close PARTIAL items: edit-in-place for projects/education/certifications, skills filter in UI, follow-up date
    control, a labelled resume dataset, real-world DOCX template corpus.
