@@ -1,0 +1,20 @@
+[project]
+name = "jobpilot-mcp"
+version = "0.1.0"
+description = "JobPilot MCP server: exposes JobPilot to MCP clients through the JobPilot API"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp>=2.3.0",
+]
+
+
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "respx>=0.23.1",
+]

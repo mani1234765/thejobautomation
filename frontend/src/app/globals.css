@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* JobPilot design tokens — see DESIGN_SYSTEM.md.
+   Neutral "paper & graphite" surfaces, one accent ("runway" green) reserved for primary actions
+   and positive fit, and semantic colours used only for status. */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: oklch(0.985 0.002 95);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.97 0.003 95);
+  --surface-3: oklch(0.945 0.004 95);
+  --border: oklch(0.915 0.004 95);
+  --border-strong: oklch(0.86 0.005 95);
+  --fg: oklch(0.21 0.006 270);
+  --fg-muted: oklch(0.5 0.008 270);
+  --fg-subtle: oklch(0.62 0.006 270);
+
+  --accent: oklch(0.52 0.105 165);
+  --accent-hover: oklch(0.47 0.1 165);
+  --accent-fg: oklch(0.99 0.01 165);
+  --accent-soft: oklch(0.96 0.03 165);
+  --accent-soft-fg: oklch(0.4 0.09 165);
+
+  --positive: oklch(0.55 0.13 155);
+  --positive-soft: oklch(0.96 0.035 155);
+  --warning: oklch(0.62 0.13 70);
+  --warning-soft: oklch(0.97 0.04 85);
+  --danger: oklch(0.56 0.19 25);
+  --danger-soft: oklch(0.965 0.025 25);
+  --info: oklch(0.55 0.12 245);
+  --info-soft: oklch(0.965 0.02 245);
+
+  --ring: oklch(0.52 0.105 165 / 0.45);
+  /* Categorical chart series (validated: scripts/validate_palette.js, light on #fff). Fixed order. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --chart-grid: oklch(0.93 0.004 95);
+  --shadow-sm: 0 1px 2px oklch(0.2 0.01 270 / 0.05);
+  --shadow-md: 0 1px 2px oklch(0.2 0.01 270 / 0.04), 0 4px 12px oklch(0.2 0.01 270 / 0.06);
+  --shadow-lg: 0 2px 4px oklch(0.2 0.01 270 / 0.04), 0 16px 40px oklch(0.2 0.01 270 / 0.12);
+}
+
+.dark {
+  --bg: oklch(0.165 0.004 270);
+  --surface: oklch(0.195 0.005 270);
+  --surface-2: oklch(0.225 0.006 270);
+  --surface-3: oklch(0.26 0.007 270);
+  --border: oklch(0.285 0.007 270);
+  --border-strong: oklch(0.35 0.008 270);
+  --fg: oklch(0.95 0.003 95);
+  --fg-muted: oklch(0.7 0.006 270);
+  --fg-subtle: oklch(0.58 0.006 270);
+
+  --accent: oklch(0.7 0.12 165);
+  --accent-hover: oklch(0.75 0.12 165);
+  --accent-fg: oklch(0.18 0.03 165);
+  --accent-soft: oklch(0.3 0.05 165);
+  --accent-soft-fg: oklch(0.85 0.09 165);
+
+  --positive: oklch(0.72 0.14 155);
+  --positive-soft: oklch(0.29 0.05 155);
+  --warning: oklch(0.8 0.13 80);
+  --warning-soft: oklch(0.3 0.05 80);
+  --danger: oklch(0.7 0.17 25);
+  --danger-soft: oklch(0.3 0.06 25);
+  --info: oklch(0.72 0.12 245);
+  --info-soft: oklch(0.29 0.05 245);
+
+  --ring: oklch(0.7 0.12 165 / 0.5);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --chart-grid: oklch(0.27 0.006 270);
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 1px 2px oklch(0 0 0 / 0.3), 0 4px 12px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 2px 4px oklch(0 0 0 / 0.3), 0 16px 40px oklch(0 0 0 / 0.45);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-fg);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ring: var(--ring);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  @keyframes shimmer {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--accent-soft-fg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+/* Job descriptions come from third-party boards (sanitised server-side); give them calm typography. */
+.prose-jd {
+  color: var(--fg);
+  line-height: 1.65;
+}
+.prose-jd h1, .prose-jd h2, .prose-jd h3, .prose-jd h4 {
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.9375rem;
+}
+.prose-jd p { margin: 0.5rem 0; }
+.prose-jd ul { list-style: disc; padding-left: 1.25rem; margin: 0.5rem 0; }
+.prose-jd ol { list-style: decimal; padding-left: 1.25rem; margin: 0.5rem 0; }
+.prose-jd li { margin: 0.2rem 0; }
+.prose-jd a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.prose-jd strong, .prose-jd b { font-weight: 600; }

@@ -1,0 +1,58 @@
+# ── Secrets & credentials ─────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+client_secret*.json
+credentials*.json
+service-account*.json
+*oauth*token*.json
+.netrc
+
+# ── Local data: databases, uploaded resumes, backups ─────────────────────────────────────────
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.dump
+jobpilot-*.tar.gz
+backups/
+
+# ── Logs & reports ────────────────────────────────────────────────────────────────────────────
+*.log
+logs/
+verify-report*.json
+coverage.xml
+htmlcov/
+
+# ── Python ────────────────────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[oc]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+
+# ── Node / Next ───────────────────────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── OS / editors ──────────────────────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp

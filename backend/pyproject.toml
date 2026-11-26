@@ -1,0 +1,58 @@
+[project]
+name = "jobpilot-backend"
+version = "0.1.0"
+description = "JobPilot API, worker and domain services"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "anthropic>=2.14.0",
+    "argon2-cffi>=25.1.0",
+    "cryptography>=50.0.2",
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "nh3>=0.3.8",
+    "psycopg[binary]>=3.3.9",
+    "pydantic-settings>=2.16.3",
+    "pydantic[email]>=2.14.4",
+    "pyjwt>=2.15.1",
+    "pypdf>=7.1.1",
+    "python-docx>=1.2.0",
+    "python-multipart>=0.0.34",
+    "redis>=8.2.0",
+    "sqlalchemy>=2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+# E501: the formatter owns line length; remaining long lines are user-facing strings.
+ignore = ["S101", "B008", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S107"]
+# Regex/token-prefix constants, not credentials.
+"app/domain/resume_parser.py" = ["S105"]
+"app/security/core.py" = ["S105"]
+# Fixed argv lists (tool path + operator-supplied DB URL), never shell strings or end-user input.
+"app/ops/backup.py" = ["S603"]
+"tests/test_migrations.py" = ["S603"]

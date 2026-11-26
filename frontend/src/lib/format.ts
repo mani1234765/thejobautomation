@@ -1,0 +1,113 @@
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import type { AppStatus, JobCard } from "./types";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+export function relativeTime(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "—";
+  const diff = (new Date(iso).getTime() - now) / 1000;
+  const abs = Math.abs(diff);
+  if (abs < 45) return "just now";
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["minute", 60], ["hour", 3600], ["day", 86400], ["week", 604800], ["month", 2629800], ["year", 31557600],
+  ];
+  let chosen: [Intl.RelativeTimeFormatUnit, number] = units[0];
+  for (const u of units) if (abs >= u[1]) chosen = u;
+  return rtf.format(Math.round(diff / chosen[1]), chosen[0]);
+}
+
+export function formatDate(iso: string | null | undefined, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-IN", opts);
+}
+
+export function formatDateTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function compactMoney(v: number, currency: string): string {
+  if (currency === "INR") {
+    if (v >= 100_000) return `₹${(v / 100_000).toFixed(v % 100_000 === 0 ? 0 : 1)}L`;
+    return `₹${Math.round(v / 1000)}k`;
+  }
+  const symbol = { USD: "$", EUR: "€", GBP: "£" }[currency] ?? `${currency} `;
+  return v >= 1000 ? `${symbol}${Math.round(v / 1000)}k` : `${symbol}${v}`;
+}
+
+/** Salary as disclosed, or null. Never invents a figure. */
+export function formatSalary(job: Pick<JobCard, "salary_min" | "salary_max" | "salary_currency" | "salary_period">): string | null {
+  const { salary_min: lo, salary_max: hi, salary_currency: cur, salary_period: per } = job;
+  if (lo == null && hi == null) return null;
+  const c = cur ?? "INR";
+  const range = lo != null && hi != null && lo !== hi ? `${compactMoney(lo, c)}–${compactMoney(hi, c)}` : compactMoney((lo ?? hi)!, c);
+  const suffix = per === "month" ? "/mo" : per === "hour" ? "/hr" : c === "INR" ? " CTC" : "/yr";
+  return range + suffix;
+}
+
+export function formatExperience(min: number | null, max: number | null): string | null {
+  if (min == null) return null;
+  if (min === 0 && (max ?? 0) <= 1) return "Entry level";
+  return max != null ? `${min}–${max} yrs` : `${min}+ yrs`;
+}
+
+export const STATUS_META: Record<AppStatus, { label: string; tone: Tone }> = {
+  discovered: { label: "Discovered", tone: "neutral" },
+  shortlisted: { label: "Shortlisted", tone: "neutral" },
+  preparing: { label: "Preparing", tone: "info" },
+  awaiting_approval: { label: "Awaiting approval", tone: "warning" },
+  approved: { label: "Approved", tone: "accent" },
+  submitted: { label: "Submitted", tone: "info" },
+  assessment: { label: "Assessment", tone: "info" },
+  interview: { label: "Interview", tone: "accent" },
+  offer: { label: "Offer", tone: "positive" },
+  rejected: { label: "Rejected", tone: "danger" },
+  withdrawn: { label: "Withdrawn", tone: "neutral" },
+  failed: { label: "Submission failed", tone: "danger" },
+};
+
+export const PIPELINE: AppStatus[] = [
+  "discovered", "shortlisted", "preparing", "awaiting_approval", "approved", "submitted", "assessment", "interview", "offer",
+];
+
+export type Tone = "neutral" | "accent" | "positive" | "warning" | "danger" | "info";
+
+export function scoreTone(score: number | null | undefined): Tone {
+  if (score == null) return "neutral";
+  if (score >= 75) return "positive";
+  if (score >= 55) return "accent";
+  if (score >= 40) return "warning";
+  return "neutral";
+}
+
+export const WORK_MODE_LABEL: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
+export const EMPLOYMENT_LABEL: Record<string, string> = {
+  full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship",
+};
+export const EXPERIENCE_LEVELS = [
+  { value: "fresher", label: "Fresher" },
+  { value: "internship", label: "Internship" },
+  { value: "0-1", label: "0–1 yrs" },
+  { value: "1-2", label: "1–2 yrs" },
+  { value: "2-3", label: "2–3 yrs" },
+  { value: "3-5", label: "3–5 yrs" },
+  { value: "5+", label: "5+ yrs" },
+] as const;
+
+export function pluralize(n: number, word: string, plural = `${word}s`) {
+  return `${n.toLocaleString("en-IN")} ${n === 1 ? word : plural}`;
+}
+
+export function percent(v: number | null | undefined): string {
+  return v == null ? "—" : `${Math.round(v * 100)}%`;
+}
+
+export function initials(name: string | null | undefined): string {
+  if (!name) return "?";
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+}

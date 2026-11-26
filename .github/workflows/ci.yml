@@ -1,0 +1,255 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live_integrations:
+        description: "Run live provider verification (uses repository secrets; AI calls cost money)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+  UV_VERSION: "0.12.x"
+
+jobs:
+  backend:
+    name: Backend (lint, migrations, tests on PostgreSQL + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: jobpilot
+          POSTGRES_PASSWORD: jobpilot
+          POSTGRES_DB: jobpilot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jobpilot" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      JOBPILOT_ENV: test
+      PGPASSWORD: jobpilot
+      JOBPILOT_TEST_DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_test
+      JOBPILOT_TEST_MIGRATION_DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_migrations
+      JOBPILOT_TEST_BACKUP_SOURCE_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_backup_src
+      JOBPILOT_TEST_BACKUP_TARGET_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_backup_dst
+      JOBPILOT_TEST_REDIS_URL: redis://localhost:6379/15
+      JOBPILOT_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install PostgreSQL client tools (pg_dump/pg_restore for the backup drill)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+      - name: Create disposable databases
+        run: |
+          for db in jobpilot_migrations jobpilot_backup_src jobpilot_backup_dst; do
+            psql -h localhost -U jobpilot -d jobpilot_test -c "CREATE DATABASE $db"
+          done
+      - run: uv sync --frozen
+      - name: Lint and format
+        run: |
+          uv run ruff check app tests
+          uv run ruff format --check app tests
+      - name: Migrations apply to PostgreSQL and match the models
+        env:
+          DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_test
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+      - name: Tests (PostgreSQL, Redis rate limiter, migrations, backup drill)
+        env:
+          PATH_PREFIX: /usr/lib/postgresql/17/bin
+        run: |
+          export PATH="$PATH_PREFIX:$PATH"
+          uv run pytest -q -p no:logging --cov=app --cov-report=term --cov-report=xml
+      - name: Tests (SQLite)
+        env:
+          JOBPILOT_TEST_DATABASE_URL: ""
+          JOBPILOT_REDIS_URL: ""
+        run: uv run pytest -q -p no:logging
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  mcp:
+    name: MCP server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  frontend:
+    name: Frontend (lint, types, unit tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Python (backend)
+        working-directory: backend
+        run: uv export --frozen --no-hashes --no-emit-project -o /tmp/backend-req.txt && uvx pip-audit -r /tmp/backend-req.txt --strict
+      - name: Python (MCP server)
+        working-directory: mcp-server
+        run: uv export --frozen --no-hashes --no-emit-project -o /tmp/mcp-req.txt && uvx pip-audit -r /tmp/mcp-req.txt --strict
+      - name: npm
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  e2e:
+    name: E2E + accessibility + CSP (production build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: jobpilot
+          POSTGRES_PASSWORD: jobpilot
+          POSTGRES_DB: jobpilot_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jobpilot" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot_e2e
+      JOBPILOT_REDIS_URL: redis://localhost:6379/0
+      JOBPILOT_STORAGE_DIR: /tmp/jobpilot-files
+      JOBPILOT_API_ORIGIN: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Start API
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run alembic upgrade head
+          nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/api/v1/health && break; sleep 1; done
+      - name: Build and start web app
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          nohup npm start -- -p 3000 > /tmp/web.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://localhost:3000/login && break; sleep 1; done
+      - name: Playwright
+        working-directory: frontend
+        # The discovery test follows a real public Ashby board, so this job needs outbound network access.
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-artifacts
+          path: |
+            frontend/test-results
+            /tmp/api.log
+            /tmp/web.log
+
+  live-integrations:
+    name: Live integration verification (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.live_integrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: integration-verification
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      JOBPILOT_LLM_PROVIDER: ${{ secrets.JOBPILOT_LLM_PROVIDER }}
+      JOBPILOT_LLM_MODEL: ${{ secrets.JOBPILOT_LLM_MODEL }}
+      JOBPILOT_LLM_API_KEY: ${{ secrets.JOBPILOT_LLM_API_KEY }}
+      JOBPILOT_WHATSAPP_ACCESS_TOKEN: ${{ secrets.JOBPILOT_WHATSAPP_ACCESS_TOKEN }}
+      JOBPILOT_WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.JOBPILOT_WHATSAPP_PHONE_NUMBER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen && uv run alembic upgrade head
+      # Gmail needs an interactively connected account, so it is verified from a deployed instance instead.
+      - run: uv run python -m app.ops.verify_integrations --live --json verify-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-report
+          path: backend/verify-report.json
