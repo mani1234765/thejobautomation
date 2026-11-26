@@ -6,6 +6,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { ReviewEditor } from "@/components/resume/review-editor";
 import { UploadZone } from "@/components/resume/upload-zone";
 import { VersionReview } from "@/components/resume/version-review";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ const SECTION_LABEL: Record<string, string> = {
   summary: "Summary", experience: "Experience", internships: "Internships", freelance: "Freelance", projects: "Projects",
   academic_projects: "Academic projects", education: "Education", skills: "Skills", certifications: "Certifications",
   achievements: "Achievements", publications: "Publications", leadership: "Leadership & activities", languages: "Languages",
-  interests: "Interests", contact: "Contact",
+  interests: "Interests", contact: "Contact", unknown: "Unrecognised heading",
 };
 const CATEGORY_LABEL: Record<string, string> = {
   professional: "Professional experience", internship: "Internships", freelance: "Freelance",
@@ -172,7 +173,7 @@ function ResumeInner() {
   const current = (versionId ? activeVersion?.resume_id : null) ?? selected ?? resumes?.find((r) => r.is_primary)?.id ?? resumes?.[0]?.id ?? null;
   const { data: r } = useResume(current);
 
-  const inv = [keys.resumes, keys.resume(current ?? ""), keys.profile, keys.dashboard];
+  const inv = [keys.resumes, keys.resume(current ?? ""), keys.review(current ?? ""), keys.profile, keys.dashboard];
   const setPrimary = useAction(() => api.post(`/resumes/${current}/primary`), { invalidate: inv, success: "Set as primary resume" });
   const reparse = useAction(() => api.post(`/resumes/${current}/parse`), { invalidate: inv, success: "Re-analysed" });
   const apply = useAction(() => api.post<{ experiences: number; skills: number }>(`/resumes/${current}/apply-to-profile`, { replace: true }), {
@@ -255,7 +256,7 @@ function ResumeInner() {
                       <MenuTrigger asChild><Button size="icon" aria-label="Resume actions"><MoreHorizontal /></Button></MenuTrigger>
                       <MenuContent>
                         {!r.is_primary && <MenuItem onSelect={() => setPrimary.mutate(undefined)}><Star /> Make primary</MenuItem>}
-                        <MenuItem onSelect={() => reparse.mutate(undefined)}><RefreshCw /> Re-analyse</MenuItem>
+                        <MenuItem onSelect={() => reparse.mutate(undefined)}><RefreshCw /> Re-analyse file (corrections kept)</MenuItem>
                         <MenuItem asChild><a href={`/api/v1/resumes/${r.id}/download`}><Download /> Download original</a></MenuItem>
                         <MenuSeparator />
                         <MenuItem destructive onSelect={() => setDeleteOpen(true)}><Trash2 /> Delete</MenuItem>
@@ -266,9 +267,17 @@ function ResumeInner() {
                 {r.parse_status === "failed" ? (
                   <Callout tone="danger" title="We couldn't read this file">{r.parse_error}</Callout>
                 ) : (
-                  <Tabs defaultValue="analysis">
-                    <TabsList><TabsTrigger value="analysis">Analysis</TabsTrigger><TabsTrigger value="structure">Structure</TabsTrigger></TabsList>
-                    <TabsContent value="analysis" className="pt-5"><Analysis r={r} /></TabsContent>
+                  <Tabs defaultValue="review">
+                    <TabsList>
+                      <TabsTrigger value="review">Review &amp; edit</TabsTrigger>
+                      <TabsTrigger value="analysis">Analysis</TabsTrigger>
+                      <TabsTrigger value="structure">Structure</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="review" className="pt-5"><ReviewEditor key={r.id} resumeId={r.id} /></TabsContent>
+                    <TabsContent value="analysis" className="pt-5">
+                      <Callout tone="neutral" className="mb-5">This is what was read from the file. To fix anything, use <span className="font-medium">Review &amp; edit</span>; your corrections are what JobPilot uses.</Callout>
+                      <Analysis r={r} />
+                    </TabsContent>
                     <TabsContent value="structure" className="pt-5"><Structure r={r} /></TabsContent>
                   </Tabs>
                 )}

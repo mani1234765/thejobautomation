@@ -15,6 +15,7 @@ from app.security.uploads import DOCX_MIME, UploadRejected, get_file_store, vali
 from app.services import audit
 from app.services import jobs as jobs_svc
 from app.services import profile as profile_svc
+from app.services import resume_review as review_svc
 from app.services import resumes as svc
 
 router = APIRouter(tags=["resumes"])
@@ -246,7 +247,7 @@ def decide_change(
             status=body.status,
             edited_text=body.edited_text,
             acknowledge_flags=body.acknowledge_flags,
-            evidence=v.resume.text_content or "",
+            evidence=f"{v.resume.text_content or ''}\n{review_svc.profile_text(db, p.user)}",
         )
     except KeyError as exc:
         raise HTTPException(404, "Suggestion not found.") from exc

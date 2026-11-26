@@ -118,6 +118,28 @@ The release-readiness report is in [RELEASE_READINESS_V1_1.md](RELEASE_READINESS
 | 4 | Deploy staging | ⛔ BLOCKED | Needs a payment method on the Render workspace and explicit deployment approval |
 | 5 | Staging acceptance | ⛔ BLOCKED | Depends on deployment. Locally: full automated suite green (§6 of RELEASE_READINESS_V1_2.md) |
 
+## 4a. Resume Review & Editor
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Inspect pipeline, schema, models, API, UI, tests first | ✅ PASS | Corrected profile lives in the existing profile tables, which matching and answers already read |
+| Edit every extracted section (summary, experience, projects, education, skills, certifications) | ✅ PASS | `test_resume_review.py`; E2E |
+| Add / edit / delete entries | ✅ PASS | `test_edit_add_delete_and_validation` |
+| Change an entry's section or category | ✅ PASS | `test_education_misfiled_as_experience_can_be_moved_to_education`, `test_move_to_projects_summary_and_skills_and_change_category`; E2E |
+| Split and merge | ✅ PASS | `test_split_two_roles_merged_into_one_then_merge_back` (experience; projects, education and certifications split on body/detail lines) |
+| Persisted; survives refresh, restart and re-processing | ✅ PASS | `test_corrections_survive_a_restart`; E2E reload; re-extraction tests |
+| Original upload unchanged and separate | ✅ PASS | `test_original_file_is_never_modified` (byte-identical download; raw extraction kept separately) |
+| Corrected profile is the source of truth for matching, tailoring, answers | ✅ PASS | `test_tailoring_matching_and_answers_use_the_corrected_profile` |
+| Explicit re-extraction that preserves corrections | ✅ PASS | Preview + apply; `test_reextraction_preserves_corrections_deletions_and_moves`, `test_deleted_entry_stays_deleted_and_profile_crud_edits_are_preserved` |
+| Content-based section classification | ✅ PASS | `test_resume_classification.py` (21) |
+| Validation and confidence indicators | ✅ PASS | Date-order validation (422), per-entry hints, confidence + reasons, "needs review" counts and filter |
+| Regression tests | ✅ PASS | 35 new backend tests + 1 E2E journey |
+| Live AI tailoring with the corrected profile | ⛔ BLOCKED | Prompt and fabrication evidence include the reviewed profile; not run against a real model (no AI credentials) |
+
+Limitations: classification is still heuristic and was measured on synthetic resumes only; splitting education
+or certifications only splits their detail lines; moving to Skills keeps only recognised skills (the dialog
+warns).
+
 ## 5. Next milestones
 1. **Credentials** (owner): AI key, Google OAuth client, WhatsApp Cloud API → run `verify_integrations --live`
    and flip the BLOCKED rows to PASS or FAIL.

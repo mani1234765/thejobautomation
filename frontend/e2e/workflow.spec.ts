@@ -64,6 +64,54 @@ test("register and complete onboarding from a resume", async () => {
   await axe(page);
 });
 
+test("review and correct the extracted resume; corrections persist and survive re-extraction", async () => {
+  await page.goto("/resume");
+  await expect(page.getByRole("tab", { name: "Review & edit" })).toHaveAttribute("aria-selected", "true");
+  const experience = page.getByTestId("review-experience");
+  await expect(experience).toHaveCount(3);
+
+  // Edit: the change shows as saved only after the server confirms it.
+  await page.getByRole("button", { name: "Edit Associate Developer · Nimbus Labs" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/Job title/).fill("Associate Software Developer");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Correction saved")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("Associate Software Developer · Nimbus Labs")).toBeVisible();
+
+  // Move it to another section and back (e.g. education misfiled as experience).
+  await page.getByRole("button", { name: "More actions for Associate Software Developer · Nimbus Labs" }).click();
+  await page.getByRole("menuitem", { name: /Move to/ }).click();
+  await page.getByRole("dialog").getByLabel("Section").selectOption("education");
+  await axe(page);
+  await page.getByRole("dialog").getByRole("button", { name: "Move" }).click();
+  await expect(page.getByText("Moved to Education")).toBeVisible();
+  await expect(experience).toHaveCount(2);
+  await expect(page.getByTestId("review-education")).toHaveCount(2);
+
+  // Corrections persist across a reload.
+  await page.reload();
+  await expect(page.getByTestId("review-education")).toHaveCount(2);
+  await expect(experience).toHaveCount(2);
+
+  // Re-extraction previews first and keeps corrections.
+  await page.getByRole("button", { name: /Re-extract/ }).click();
+  await expect(page.getByText("Your corrections are protected")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByText(/Re-extracted\. Your corrections were kept/)).toBeVisible();
+  await expect(experience).toHaveCount(2);
+  await expect(page.getByTestId("review-education")).toHaveCount(2);
+
+  // Move it back so the rest of the journey sees the original experience.
+  const moved = page.getByTestId("review-education").filter({ hasText: "Nimbus" });
+  await moved.getByRole("button", { name: /More actions for/ }).click();
+  await page.getByRole("menuitem", { name: /Move to/ }).click();
+  await page.getByRole("dialog").getByLabel("Section").selectOption("experience:professional");
+  await page.getByRole("dialog").getByRole("button", { name: "Move" }).click();
+  await expect(experience).toHaveCount(3);
+  await axe(page);
+});
+
 test("follow a real job board and see explained matches", async () => {
   await page.goto("/jobs?sources=1");
   await page.getByPlaceholder("stripe").fill("https://jobs.ashbyhq.com/ramp");

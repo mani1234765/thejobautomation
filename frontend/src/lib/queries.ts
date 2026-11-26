@@ -6,7 +6,7 @@ import { api, ApiError } from "./api";
 import type {
   AiStatus, Analytics, ApiToken, Application, ApplicationDetail, Approval, AutomationConfig, AutomationExecution,
   ChatMessage, Communication, Conversation, Dashboard, FullProfile, IntegrationInfo, InterviewSession, JobDetail,
-  JobPage, JobSource, Me, Notification, ResumeDetail, ResumeSummary, ResumeVersion, Settings,
+  JobPage, JobSource, Me, Notification, ResumeDetail, ResumeReview, ResumeSummary, ResumeVersion, Settings,
 } from "./types";
 
 export const keys = {
@@ -19,6 +19,7 @@ export const keys = {
   sources: ["job-sources"] as const,
   resumes: ["resumes"] as const,
   resume: (id: string) => ["resume", id] as const,
+  review: (id: string) => ["resume-review", id] as const,
   versions: (jobId?: string) => ["resume-versions", jobId ?? "all"] as const,
   version: (id: string) => ["resume-version", id] as const,
   applications: ["applications"] as const,
@@ -66,6 +67,8 @@ export const useSources = () => useQuery({ queryKey: keys.sources, queryFn: () =
 export const useResumes = () => useQuery({ queryKey: keys.resumes, queryFn: () => api.get<ResumeSummary[]>("/resumes") });
 export const useResume = (id: string | null) =>
   useQuery({ queryKey: keys.resume(id ?? ""), queryFn: () => api.get<ResumeDetail>(`/resumes/${id}`), enabled: !!id });
+export const useResumeReview = (id: string | null) =>
+  useQuery({ queryKey: keys.review(id ?? ""), queryFn: () => api.get<ResumeReview>(`/resumes/${id}/review`), enabled: !!id });
 export const useVersions = (jobId?: string) =>
   useQuery({ queryKey: keys.versions(jobId), queryFn: () => api.get<ResumeVersion[]>("/resume-versions", { job_id: jobId }) });
 export const useVersion = (id: string | null) =>

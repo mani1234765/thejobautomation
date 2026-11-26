@@ -46,6 +46,7 @@ from app.security.core import verify_password
 from app.security.uploads import get_file_store
 from app.services import audit
 from app.services import profile as svc
+from app.services import resume_review as review_svc
 
 router = APIRouter(tags=["profile"])
 
@@ -116,12 +117,15 @@ def _crud(path: str, model: Any, schema_in: type[BaseModel], schema_out: type[Ba
         row = get_owned(db, model, item_id, p.id)
         for k, v in body.model_dump().items():  # type: ignore[attr-defined]
             setattr(row, k, v)
+        review_svc.mark_edited(row)  # a correction: re-extraction won't overwrite it
         db.commit()
         return row
 
     @router.delete(f"/profile/{path}/{{item_id}}", status_code=204, name=f"delete_{path}")
     def remove(item_id: str, db: DB, p: Principal = Depends(web_only)) -> Response:
-        db.delete(get_owned(db, model, item_id, p.id))
+        row = get_owned(db, model, item_id, p.id)
+        review_svc.record_deletion(db, row)  # re-extraction won't bring it back
+        db.delete(row)
         db.commit()
         return Response(status_code=204)
 
@@ -149,7 +153,9 @@ def set_skill_verified(skill_id: str, body: SkillIn, db: DB, p: Principal = Depe
 
 @router.delete("/profile/skills/{skill_id}", status_code=204)
 def delete_skill(skill_id: str, db: DB, p: Principal = Depends(web_only)) -> None:
-    db.delete(get_owned(db, Skill, skill_id, p.id))
+    skill = get_owned(db, Skill, skill_id, p.id)
+    review_svc.record_skill_deletion(db, p.id, skill.name)
+    db.delete(skill)
     db.commit()
 
 

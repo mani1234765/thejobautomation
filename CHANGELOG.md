@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — Resume Review & Editor
+
+### Added
+- **Resume Review & Editor** (Resume Studio → Review & edit): edit, add and delete entries in every extracted
+  section (summary, experience, projects, education, skills, certifications); move entries between sections
+  and categories; split entries that were merged and merge duplicates; assign content under unrecognised
+  headings. Every change is committed before the UI shows it as saved.
+- Confidence and reasons on every extracted entry; low-confidence and moved entries are flagged for review.
+- Explicit re-extraction with a preview. Edited entries are kept as the user left them, deleted entries stay
+  deleted, and new entries arrive flagged for review.
+
+### Changed
+- Section classification also reads entry content (degrees, institutions, grades, job titles, employers,
+  date ranges, repository links, certification terms, summary prose), not only headings. Misfiled entries
+  are moved and flagged; ambiguous ones are flagged but left in place.
+- Tailoring takes paragraph sections and skills from the corrected profile and gives the model the reviewed
+  profile; matching and application answers already read it.
+- `POST /resumes/{id}/apply-to-profile` and the profile CRUD endpoints no longer destroy corrections
+  (same request and response shape).
+
+### Fixed
+- DOCX page-header text was appended to the last section (e.g. read as a certification).
+- Institution extraction when the degree comes first ("B.Tech in CSE, NIT Warangal").
+- Timestamps from PostgreSQL sessions in non-UTC time zones were not normalised to UTC, shifting dashboard
+  activity to the next day late in the UTC day.
+- Backend tests could read a developer's `backend/.env`; they're now hermetic.
+
+### Database
+- Migration `b7c65986ac58` (additive, reversible): review columns on experiences, projects, education and
+  certifications; `details` on education and certifications; `resumes.review`.
+
 ## 1.2.0 — 2026-11-26 (staging preparation; not deployed)
 
 ### Security

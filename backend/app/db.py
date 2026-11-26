@@ -40,9 +40,11 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC) if value is not None else None
 
     def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
-        if value is not None and value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        return value
+        if value is None:
+            return None
+        # PostgreSQL returns timestamptz in the session time zone (e.g. Asia/Kolkata); normalise to UTC so
+        # day bucketing and serialised timestamps don't depend on the server's locale.
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 class Base(DeclarativeBase):

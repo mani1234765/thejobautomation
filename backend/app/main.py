@@ -20,6 +20,7 @@ from app.api import (
     interviews,
     jobs,
     profile,
+    resume_review,
     resumes,
 )
 from app.config import get_settings
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
         auth,
         profile,
         resumes,
+        resume_review,
         jobs,
         applications,
         assistant,

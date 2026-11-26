@@ -9,9 +9,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app import db as dbmod
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db import Base
 from app.security.core import rate_limiter
+
+# Tests are hermetic: never read a developer's backend/.env (which may hold real credentials).
+Settings.model_config["env_file"] = None
 
 TEST_DATABASE_URL = os.environ.get("JOBPILOT_TEST_DATABASE_URL")  # e.g. postgresql+psycopg://localhost/jobpilot_test
 

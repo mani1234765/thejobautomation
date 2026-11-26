@@ -28,6 +28,10 @@ class Resume(IdMixin, TimestampMixin, Base):
     extracted: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     quality: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     text_content: Mapped[str | None] = mapped_column(Text)
+    # Review state of the corrected profile built from this resume:
+    # {"dismissed": [fingerprints the user deleted or merged away], "dismissed_skills": [...],
+    #  "summary_applied": bool, "reviewed_at": iso, "last_reextracted_at": iso}
+    review: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default="{}")
 
     sections: Mapped[list[ResumeSection]] = relationship(
         back_populates="resume", cascade="all, delete-orphan", order_by="ResumeSection.ordinal"

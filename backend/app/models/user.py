@@ -106,7 +106,22 @@ class Skill(IdMixin, TimestampMixin, Base):
     evidence: Mapped[list[str]] = mapped_column(JSON, default=list)  # snippets where the skill was found
 
 
-class Experience(IdMixin, TimestampMixin, Base):
+class ReviewMixin:
+    """Provenance and review state for profile entries extracted from a resume.
+
+    `fingerprint` identifies the extracted entry across re-extractions; `user_edited` marks a correction
+    that re-extraction must never overwrite. Entries the user adds by hand have no fingerprint.
+    """
+
+    source_ids: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    confidence: Mapped[float | None] = mapped_column(Float)
+    review_reasons: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    user_edited: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    fingerprint: Mapped[str | None] = mapped_column(String(32))
+
+
+class Experience(ReviewMixin, IdMixin, TimestampMixin, Base):
     __tablename__ = "experiences"
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -122,7 +137,7 @@ class Experience(IdMixin, TimestampMixin, Base):
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class Project(IdMixin, TimestampMixin, Base):
+class Project(ReviewMixin, IdMixin, TimestampMixin, Base):
     __tablename__ = "projects"
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -135,7 +150,7 @@ class Project(IdMixin, TimestampMixin, Base):
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class Education(IdMixin, TimestampMixin, Base):
+class Education(ReviewMixin, IdMixin, TimestampMixin, Base):
     __tablename__ = "education"
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -146,10 +161,11 @@ class Education(IdMixin, TimestampMixin, Base):
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     grade: Mapped[str | None] = mapped_column(String(60))
+    details: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class Certification(IdMixin, TimestampMixin, Base):
+class Certification(ReviewMixin, IdMixin, TimestampMixin, Base):
     __tablename__ = "certifications"
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -157,6 +173,7 @@ class Certification(IdMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(300))
     issuer: Mapped[str | None] = mapped_column(String(200))
     issued_on: Mapped[date | None] = mapped_column(Date)
+    details: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

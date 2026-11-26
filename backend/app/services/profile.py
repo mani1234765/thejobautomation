@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
-
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
@@ -109,112 +107,24 @@ def upsert_skill(
     return skill
 
 
-def _d(v: str | None) -> date | None:
-    return date.fromisoformat(v) if v else None
-
-
 def apply_resume(db: Session, user: User, resume: Resume, parsed: ParsedResume, *, replace: bool) -> dict:
-    """Prefill the profile from a parsed resume. Everything imported is marked *unverified* until the
-    user reviews it. With `replace`, rows previously imported from this resume are replaced."""
-    uid = user.id
-    if replace:
-        for model in (Experience, Project, Education, Certification):
-            db.execute(delete(model).where(model.user_id == uid, model.resume_id == resume.id))
+    """Prefill the profile from a parsed resume. Everything imported starts *unverified*.
 
-    p = user.profile
-    c = parsed.contact
-    filled: list[str] = []
-    for field, value in (
-        ("full_name", c.get("name")),
-        ("phone", c.get("phone")),
-        ("location", c.get("location")),
-        ("linkedin_url", c.get("linkedin")),
-        ("summary", parsed.summary),
-    ):
-        if value and not getattr(p, field):
-            if field == "linkedin_url" and not value.startswith("http"):
-                value = "https://" + value
-            setattr(p, field, value)
-            filled.append(field)
-    if p.years_experience is None:
-        p.years_experience = parsed.years_experience
-        filled.append("years_experience")
+    Delegates to the review service, which preserves the user's corrections: edited entries are kept,
+    deleted ones stay deleted. With `replace`, unedited entries the extraction no longer finds are removed.
+    """
+    from app.security.uploads import get_file_store
+    from app.services.resume_review import import_resume
 
-    for e in parsed.experiences:
-        db.add(
-            Experience(
-                user_id=uid,
-                resume_id=resume.id,
-                category=e.category,
-                employer=e.employer,
-                title=e.title,
-                location=e.location,
-                start_date=_d(e.start_date),
-                end_date=_d(e.end_date),
-                is_current=e.is_current,
-                bullets=e.bullets,
-                verified=False,
-            )
-        )
-    for pr in parsed.projects:
-        db.add(
-            Project(
-                user_id=uid,
-                resume_id=resume.id,
-                category=pr.category,
-                name=pr.name,
-                description=pr.description,
-                technologies=pr.technologies,
-                url=pr.url,
-                verified=False,
-            )
-        )
-    for ed in parsed.education:
-        db.add(
-            Education(
-                user_id=uid,
-                resume_id=resume.id,
-                institution=ed.institution,
-                degree=ed.degree,
-                field=ed.field,
-                start_date=_d(ed.start_date),
-                end_date=_d(ed.end_date),
-                grade=ed.grade,
-                verified=False,
-            )
-        )
-    for cert in parsed.certifications:
-        db.add(
-            Certification(
-                user_id=uid, resume_id=resume.id, name=cert["name"], issuer=cert.get("issuer"), verified=False
-            )
-        )
-    for name, evidence in parsed.skills.items():
-        upsert_skill(db, uid, name, source="resume", verified=False, evidence=evidence)
-
-    audit.record(
-        db,
-        user_id=uid,
-        actor="user",
-        action="profile.prefilled_from_resume",
-        entity_type="resume",
-        entity_id=resume.id,
-        meta={"experiences": len(parsed.experiences), "skills": len(parsed.skills)},
-    )
-    return {
-        "filled_fields": filled,
-        "experiences": len(parsed.experiences),
-        "projects": len(parsed.projects),
-        "education": len(parsed.education),
-        "skills": len(parsed.skills),
-        "certifications": len(parsed.certifications),
-    }
+    return import_resume(db, get_file_store(), user, resume, replace=replace, parsed=parsed)
 
 
 def verify_all(db: Session, user: User) -> None:
     uid = user.id
     for model in (Experience, Project, Education, Certification, Skill):
-        for row in db.scalars(select(model).where(model.user_id == uid, model.verified.is_(False))):
+        for row in db.scalars(select(model).where(model.user_id == uid)):
             row.verified = True
+            if model is not Skill:
+                row.needs_review, row.review_reasons = False, []
     user.profile.verified_at = utcnow()
     audit.record(db, user_id=uid, actor="user", action="profile.verified")

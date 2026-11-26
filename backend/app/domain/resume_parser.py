@@ -11,6 +11,7 @@ fields that can't be found are left empty and reported as missing.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import io
 import re
 from dataclasses import asdict, dataclass, field
@@ -215,6 +216,8 @@ class ExperienceEntry:
     is_current: bool
     bullets: list[str]
     source_ids: list[str]
+    confidence: float = 1.0
+    review_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -225,6 +228,8 @@ class ProjectEntry:
     technologies: list[str]
     url: str | None
     source_ids: list[str]
+    confidence: float = 1.0
+    review_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -236,6 +241,8 @@ class EducationEntry:
     end_date: str | None
     grade: str | None
     source_ids: list[str]
+    confidence: float = 1.0
+    review_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -256,6 +263,11 @@ class ParsedResume:
     missing: list[str]
     quality: dict
     text: str
+    summary_source_ids: list[str] = field(default_factory=list)
+    summary_confidence: float | None = None
+    summary_reasons: list[str] = field(default_factory=list)
+    # Content under an unrecognised heading that couldn't be classified: [{text, source_ids, heading}]
+    unclassified: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -263,13 +275,17 @@ class ParsedResume:
 
 # ── Document → lines ───────────────────────────────────────────────────────────────────────────
 def lines_from_docx(data: bytes) -> list[Line]:
+    page_header: list[Line] = []
     out: list[Line] = []
     for p in read_paragraphs(data):
         if p.location == "footer":
             continue
         # A paragraph can hold soft line breaks; keep one Line per paragraph to preserve the id map.
-        out.append(Line(p.id, p.text.replace("\t", "  ").strip(), p.is_bold, p.is_list, p.style, p.font_size))
-    return out
+        line = Line(p.id, p.text.replace("\t", "  ").strip(), p.is_bold, p.is_list, p.style, p.font_size)
+        # Page-header text (often name/contact) is read last by python-docx; put it first so it's treated
+        # as contact information instead of being appended to whichever section happens to end the body.
+        (page_header if p.location == "header" else out).append(line)
+    return page_header + out
 
 
 def lines_from_pdf(data: bytes) -> list[Line]:
@@ -335,6 +351,16 @@ _HEADING_CUES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _is_unknown_heading(line: Line) -> bool:
+    text = line.text.strip()
+    return (
+        line.style.lower().startswith("heading")
+        and 0 < len(text.split()) <= 6
+        and not _BULLET.match(text)
+        and not _DATE_RANGE.search(text)
+    )
+
+
 def split_sections(lines: list[Line]) -> tuple[list[Line], list[Section]]:
     header: list[Line] = []
     sections: list[Section] = []
@@ -343,6 +369,10 @@ def split_sections(lines: list[Line]) -> tuple[list[Line], list[Section]]:
         hit = classify_heading(line)
         if hit:
             current = Section(hit[0], line.text.strip().rstrip(":"), hit[1])
+            sections.append(current)
+        elif _is_unknown_heading(line):
+            # A real heading (by document style) we can't name: its content is classified by meaning.
+            current = Section("unknown", line.text.strip().rstrip(":"), 0.0)
             sections.append(current)
         elif current is None:
             header.append(line)
@@ -522,10 +552,9 @@ def parse_projects(section: Section, default_category: str) -> list[ProjectEntry
     return out
 
 
-def parse_education(section: Section) -> list[EducationEntry]:
-    out: list[EducationEntry] = []
+def _education_groups(lines: list[Line]) -> list[list[Line]]:
     groups: list[list[Line]] = []
-    for line in section.lines:
+    for line in lines:
         if (
             _INSTITUTION.search(line.text)
             and (not groups or any(_INSTITUTION.search(x.text) for x in groups[-1]))
@@ -534,10 +563,17 @@ def parse_education(section: Section) -> list[EducationEntry]:
             groups.append([line])
         else:
             groups[-1].append(line)
-    for group in groups:
+    return groups
+
+
+def parse_education(section: Section) -> list[EducationEntry]:
+    out: list[EducationEntry] = []
+    for group in _education_groups(section.lines):
         blob = " | ".join(ln.text for ln in group)
         inst_line = next((ln.text for ln in group if _INSTITUTION.search(ln.text)), group[0].text)
-        institution = re.split(r"\s*[|,–—]\s*(?=\D)", _DATE_RANGE.sub("", inst_line))[0].strip(" |,–-") or inst_line
+        parts = [x.strip(" |,–-") for x in re.split(r"\s*[|,–—]\s*(?=\D)", _DATE_RANGE.sub("", inst_line))]
+        # "B.Tech in CSE, NIT Warangal": prefer the segment that names the institution over the degree.
+        institution = next((x for x in parts if _INSTITUTION.search(x)), parts[0] if parts else "") or inst_line
         degree_line = next((ln.text for ln in group if _DEGREE.search(ln.text)), None)
         degree, fld = None, None
         if degree_line:
@@ -626,6 +662,185 @@ def parse_contact(header: list[Line], all_text: str) -> dict[str, str | None]:
     }
 
 
+def parse_certifications(lines: list[Line]) -> list[dict]:
+    out: list[dict] = []
+    for ln in lines:
+        name = _strip_bullet(ln.text)
+        if not name:
+            continue
+        issuer = None
+        m = re.split(r"\s+[–—|-]\s+|\s+by\s+|,\s*", name, maxsplit=1)
+        if len(m) > 1:
+            name, issuer = m[0], re.sub(_DATE_TOKEN, "", m[1], flags=re.I).strip(" ,()-") or None
+        out.append({"name": name[:300], "issuer": issuer, "source_id": ln.id})
+    return out
+
+
+# ── Semantic classification ────────────────────────────────────────────────────────────────────
+# Headings are only one signal. Each entry is also scored on what it contains, so a degree listed
+# under "Experience" or a summary paragraph under "Projects" is put where it belongs and flagged
+# for the user to confirm.
+ENTRY_KINDS = ("summary", "experience", "projects", "education", "certifications", "skills")
+BASE_KIND = {
+    "summary": "summary",
+    "experience": "experience",
+    "internships": "experience",
+    "freelance": "experience",
+    "projects": "projects",
+    "academic_projects": "projects",
+    "education": "education",
+    "certifications": "certifications",
+    "skills": "skills",
+}
+KIND_LABEL = {
+    "summary": "a summary",
+    "experience": "work experience",
+    "projects": "a project",
+    "education": "education",
+    "certifications": "a certification",
+    "skills": "a skills list",
+}
+REVIEW_THRESHOLD = 0.7
+
+_PROJECT_CUE = re.compile(
+    r"github\.com|gitlab\.com|\b(tech stack|built with|built using|technologies used|tools used|live demo|repo)\b", re.I
+)
+_CERT_CUE = re.compile(
+    r"\b(certified|certification|certificate|credential|coursera|udemy|edx|nptel|licen[cs]ed?)\b", re.I
+)
+_EDU_CUE = re.compile(
+    r"\b(coursework|graduated|graduation|major|minor|semester|c?gpa|class of|thesis|dean'?s list)\b", re.I
+)
+_EMPLOYER_CUE = re.compile(
+    r"\b(pvt|ltd|inc|llc|llp|corp|corporation|technologies|solutions|labs|company|gmbh|limited)\b", re.I
+)
+_SUMMARY_CUE = re.compile(
+    r"\b(years of experience|passionate|seeking|motivated|i am|i'm|my goal|looking for|aspiring|"
+    r"enthusiast|professional with|experienced in|results-driven|detail-oriented)\b",
+    re.I,
+)
+
+
+def content_scores(lines: list[Line]) -> tuple[dict[str, float], dict[str, list[str]]]:
+    """Score how much a block of lines looks like each kind of resume entry.
+
+    Returns (scores, signals): the signals name the evidence, so a reassignment can be explained.
+    """
+    texts = [ln.text.strip() for ln in lines if ln.text.strip()]
+    text = " ".join(texts)
+    head = texts[0] if texts else ""
+    head_lines = " ".join(texts[:2])
+    bullets = [_strip_bullet(ln.text) for ln in lines if ln.is_list or _BULLET.match(ln.text)]
+    scores = dict.fromkeys(ENTRY_KINDS, 0.0)
+    signals: dict[str, list[str]] = {k: [] for k in ENTRY_KINDS}
+
+    def add(kind: str, points: float, why: str) -> None:
+        scores[kind] += points
+        signals[kind].append(why)
+
+    if _DEGREE.search(text):
+        add("education", 2, "a degree")
+    if _INSTITUTION.search(text):
+        add("education", 1.5, "an institution")
+    if _GRADE.search(text):
+        add("education", 1, "a grade")
+    if _EDU_CUE.search(text):
+        add("education", 1, "academic terms")
+
+    if _TITLE_HINT.search(head_lines):
+        add("experience", 1.5, "a job title")
+    if _EMPLOYER_CUE.search(head_lines):
+        add("experience", 1, "a company name")
+    if _DATE_RANGE.search(text):
+        add("experience", 1, "a date range")
+        scores["education"] += 0.5
+        scores["projects"] += 0.25
+    action = sum(1 for b in bullets if _ACTION_VERBS.match(b))
+    if action:
+        add("experience", min(1.5, 0.5 * action), "achievement bullets")
+        scores["projects"] += min(1.0, 0.3 * action)
+
+    if _PROJECT_CUE.search(text):
+        add("projects", 2, "a repository link or tech stack")
+    if re.search(r"\bproject\b", head, re.I):
+        add("projects", 1, "the word “project”")
+    if re.search(r"\b(projects?|capstone|hackathon|prototype|side project)\b", text, re.I):
+        add("projects", 1, "project wording")
+    if len(taxonomy.extract_skills(text)) >= 2 and not _TITLE_HINT.search(head_lines):
+        add("projects", 1, "technologies without a job title")
+
+    if _CERT_CUE.search(text):
+        add("certifications", 2.5, "certification terms")
+
+    body = text.split(":", 1)[1] if ":" in text[:40] else text
+    tokens = [t.strip(" .()") for t in re.split(r"[,|;•]", body) if t.strip(" .()")]
+    if len(tokens) >= 4 and sum(1 for t in tokens if taxonomy.canonicalize(t)) / len(tokens) >= 0.6:
+        add("skills", 3, "a list of known skills")
+
+    # Prose: the block itself opens with a long sentence (a titled entry with a description doesn't).
+    if len(head.split()) >= 8 and not bullets and not _DATE_RANGE.search(text):
+        add("summary", 1.5, "a prose paragraph")
+        if len(head.split()) >= 12 and len(text.split()) >= 25:
+            scores["summary"] += 1
+    if _SUMMARY_CUE.search(text):
+        add("summary", 1.5, "summary phrasing")
+    return scores, signals
+
+
+def judge(
+    section_type: str, section_conf: float, heading: str | None, lines: list[Line]
+) -> tuple[str | None, float, list[str]]:
+    """Decide which kind of entry a block is. Returns (kind or None if unclassifiable, confidence, reasons)."""
+    scores, signals = content_scores(lines)
+    best = max(scores, key=lambda k: scores[k])
+    assigned = BASE_KIND.get(section_type)
+    shown = f"“{heading}”" if heading else "this part of the resume"
+
+    def why(kind: str) -> str:
+        return ", ".join(signals[kind][:3]) or "its wording"
+
+    if assigned is None:  # unrecognised heading
+        if scores[best] < 1.5:
+            return None, 0.0, [f"{shown} wasn't recognised and its content couldn't be classified."]
+        conf = round(min(0.65, 0.35 + 0.07 * scores[best]), 2)
+        return best, conf, [f"Heading {shown} wasn't recognised; classified as {KIND_LABEL[best]} from {why(best)}."]
+
+    margin = scores[best] - scores[assigned]
+    needed = 3.0 if section_conf >= 0.85 else 2.5
+    if best != assigned and scores[best] >= needed and margin >= 1.5:
+        # Always below the review threshold: the user confirms any move the parser made on its own.
+        conf = round(min(0.65, 0.45 + 0.04 * margin), 2)
+        return best, conf, [f"Found under {shown}, but it looks like {KIND_LABEL[best]} ({why(best)})."]
+
+    conf, reasons = section_conf, []
+    if section_conf < REVIEW_THRESHOLD:
+        reasons.append(f"The heading {shown} was only a loose match for this section.")
+    if best != assigned and scores[best] >= 1.5 and margin >= 1.0:
+        # Not clear-cut enough to move automatically, but the content leans elsewhere: ask the user.
+        conf = round(min(conf, 0.6), 2)
+        reasons.append(
+            f"Listed under {shown}, but it reads more like {KIND_LABEL[best]} ({why(best)}). Check the section."
+        )
+    return assigned, conf, reasons
+
+
+def _groups_for(section: Section) -> list[list[Line]]:
+    lines = [ln for ln in section.lines if ln.text.strip()]
+    if section.canonical_type == "education":
+        return _education_groups(lines)
+    if section.canonical_type == "certifications":
+        return [[ln] for ln in lines]
+    if section.canonical_type == "summary":
+        return [lines] if lines else []
+    return _group_entries(lines)
+
+
+def fingerprint(texts: list[str]) -> str:
+    """Stable identity for an extracted entry: a hash of its normalised source text."""
+    norm = "\n".join(re.sub(r"\s+", " ", t).strip().lower() for t in texts if t.strip())
+    return hashlib.sha256(norm.encode()).hexdigest()[:32]
+
+
 # ── Quality ────────────────────────────────────────────────────────────────────────────────────
 def assess_quality(
     parsed_sections: list[Section],
@@ -710,37 +925,81 @@ def parse_lines(lines: list[Line], today: date | None = None) -> ParsedResume:
     achievements: list[str] = []
     summary_parts: list[str] = []
 
+    summary_ids: list[str] = []
+    summary_confs: list[float] = []
+    summary_reasons: list[str] = []
+    unclassified: list[dict] = []
+
+    def route(kind: str, group: list[Line], sec: Section, conf: float, reasons: list[str]) -> None:
+        nonlocal skills
+        part = Section(sec.canonical_type, sec.raw_heading, conf, group)
+        new: list[ExperienceEntry | ProjectEntry | EducationEntry] = []
+        if kind == "summary":
+            summary_parts.append(part.text)
+            summary_ids.extend(ln.id for ln in group)
+            summary_confs.append(conf)
+            summary_reasons.extend(reasons)
+        elif kind == "experience":
+            default = {"internships": "internship", "freelance": "freelance"}.get(sec.canonical_type, "professional")
+            new = list(parse_experience(part, default))
+        elif kind == "projects":
+            new = list(parse_projects(part, "academic" if sec.canonical_type == "academic_projects" else "personal"))
+        elif kind == "education":
+            new = list(parse_education(part))
+        elif kind == "certifications":
+            for c in parse_certifications(group):
+                certifications.append({**c, "confidence": conf, "review_reasons": list(reasons)})
+        elif kind == "skills":
+            k, u = parse_skills_section(part)
+            for name, ev in k.items():
+                skills.setdefault(name, ev)
+            unrecognised.extend(u)
+        for entry in new:
+            entry.confidence, entry.review_reasons = conf, list(reasons)
+        experiences.extend(e for e in new if isinstance(e, ExperienceEntry))
+        projects.extend(e for e in new if isinstance(e, ProjectEntry))
+        education.extend(e for e in new if isinstance(e, EducationEntry))
+
+    previous: tuple[str, float] | None = None
     for s in sections:
         t = s.canonical_type
-        if t == "summary":
-            summary_parts.append(s.text)
-        elif t == "experience":
-            experiences += parse_experience(s, "professional")
-        elif t == "internships":
-            experiences += parse_experience(s, "internship")
-        elif t == "freelance":
-            experiences += parse_experience(s, "freelance")
-        elif t == "projects":
-            projects += parse_projects(s, "personal")
-        elif t == "academic_projects":
-            projects += parse_projects(s, "academic")
-        elif t == "education":
-            education += parse_education(s)
+        if t in BASE_KIND and t != "skills" or t == "unknown":
+            for group in _groups_for(s):
+                kind, conf, reasons = judge(t, s.confidence, s.raw_heading, group)
+                if t == "unknown" and previous and kind == previous[0]:
+                    # A styled sub-heading (e.g. a job title set in "Heading 2") continuing the last section.
+                    conf, reasons = previous[1], []
+                if kind is None:
+                    unclassified.append(
+                        {
+                            "heading": s.raw_heading,
+                            "text": "\n".join(ln.text for ln in group),
+                            "source_ids": [ln.id for ln in group],
+                            "review_reasons": reasons,
+                        }
+                    )
+                else:
+                    route(kind, group, s, conf, reasons)
+            if t != "unknown":
+                previous = (BASE_KIND[t], s.confidence)
         elif t == "skills":
             k, u = parse_skills_section(s)
             for name, ev in k.items():
                 skills.setdefault(name, ev)
             unrecognised += u
-        elif t == "certifications":
-            for ln in s.lines:
-                name = _strip_bullet(ln.text)
-                issuer = None
-                m = re.split(r"\s+[–—|-]\s+|\s+by\s+|,\s*", name, maxsplit=1)
-                if len(m) > 1:
-                    name, issuer = m[0], re.sub(_DATE_TOKEN, "", m[1], flags=re.I).strip(" ,()-") or None
-                certifications.append({"name": name[:300], "issuer": issuer, "source_id": ln.id})
+            previous = ("skills", s.confidence)
         elif t == "achievements":
             achievements += [_strip_bullet(ln.text) for ln in s.lines]
+
+    if not summary_parts:
+        # A summary paragraph often sits above the first heading with no heading of its own.
+        for ln in header:
+            t = ln.text.strip()
+            if len(t.split()) >= 20 and not (_EMAIL.search(t) or _URL.search(t) or _LINKEDIN.search(t)):
+                summary_parts.append(t)
+                summary_ids.append(ln.id)
+                summary_confs.append(0.6)
+                summary_reasons.append("Found above the first heading, without a “Summary” heading.")
 
     # Skills mentioned anywhere (experience bullets, projects) count, with their evidence.
     for name, ev in taxonomy.extract_skills(all_text).items():
@@ -796,11 +1055,19 @@ def parse_lines(lines: list[Line], today: date | None = None) -> ParsedResume:
         missing=missing,
         quality=quality,
         text=all_text,
+        summary_source_ids=summary_ids,
+        summary_confidence=min(summary_confs) if summary_confs else None,
+        summary_reasons=summary_reasons,
+        unclassified=unclassified,
     )
 
 
+def document_lines(data: bytes, file_format: str) -> list[Line]:
+    return lines_from_docx(data) if file_format == "docx" else lines_from_pdf(data)
+
+
 def parse_document(data: bytes, file_format: str, today: date | None = None) -> ParsedResume:
-    lines = lines_from_docx(data) if file_format == "docx" else lines_from_pdf(data)
+    lines = document_lines(data, file_format)
     if not lines:
         raise ValueError("No readable text found. Scanned (image-only) PDFs are not supported yet.")
     return parse_lines(lines, today)

@@ -34,7 +34,16 @@ export interface Profile {
   verified_at: string | null;
 }
 
-export interface Experience {
+/** Provenance and review state of an entry extracted from a resume. */
+export interface ReviewFields {
+  source_ids?: string[];
+  confidence?: number | null;
+  review_reasons?: string[];
+  needs_review?: boolean;
+  user_edited?: boolean;
+}
+
+export interface Experience extends ReviewFields {
   id: string;
   resume_id: string | null;
   category: "professional" | "internship" | "freelance";
@@ -48,7 +57,7 @@ export interface Experience {
   verified: boolean;
 }
 
-export interface Project {
+export interface Project extends ReviewFields {
   id: string;
   resume_id: string | null;
   category: "academic" | "personal" | "professional";
@@ -59,7 +68,7 @@ export interface Project {
   verified: boolean;
 }
 
-export interface Education {
+export interface Education extends ReviewFields {
   id: string;
   resume_id: string | null;
   institution: string;
@@ -68,15 +77,17 @@ export interface Education {
   start_date: string | null;
   end_date: string | null;
   grade: string | null;
+  details?: string[];
   verified: boolean;
 }
 
-export interface Certification {
+export interface Certification extends ReviewFields {
   id: string;
   resume_id: string | null;
   name: string;
   issuer: string | null;
   issued_on: string | null;
+  details?: string[];
   verified: boolean;
 }
 
@@ -243,6 +254,40 @@ export interface ResumeDetail extends ResumeSummary {
   };
   quality: { score?: number; issues?: QualityIssue[]; metrics?: Record<string, number | string[]> };
   formatting_preserved: boolean;
+}
+
+export type ReviewKind = "experience" | "projects" | "education" | "certifications";
+export type ReviewTarget = ReviewKind | "summary" | "skills";
+type Reviewed<T> = T & { label: string; issues: string[] };
+
+export interface ResumeReview {
+  resume_id: string;
+  imported: boolean;
+  reviewed_at: string | null;
+  last_reextracted_at: string | null;
+  review_threshold: number;
+  summary: { text: string | null; confidence: number | null; review_reasons: string[]; needs_review: boolean };
+  entries: {
+    experience: Reviewed<Experience>[];
+    projects: Reviewed<Project>[];
+    education: Reviewed<Education>[];
+    certifications: Reviewed<Certification>[];
+  };
+  skills: Skill[];
+  unclassified: { heading: string | null; text: string; source_ids: string[]; review_reasons: string[] }[];
+  needs_review: number;
+}
+export type ReviewEntry = ResumeReview["entries"][ReviewKind][number];
+
+export interface ReextractPreview {
+  add: { kind: ReviewKind; label: string; confidence: number; review_reasons: string[] }[];
+  update: { kind: ReviewKind; label: string; current_kind: ReviewKind; current_label: string; entry_id: string }[];
+  unchanged: number;
+  kept: { kind: ReviewKind; label: string; current_kind: ReviewKind; current_label: string; entry_id: string; differs: boolean }[];
+  dismissed: { kind: ReviewKind; label: string }[];
+  stale: { kind: ReviewKind; label: string; entry_id: string }[];
+  skills: string[];
+  summary: { action: "fill" | "differs"; extracted: string; current?: string } | null;
 }
 
 export interface ResumeChange {

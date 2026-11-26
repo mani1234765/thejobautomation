@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 WorkMode = Literal["remote", "hybrid", "onsite"]
 ExperienceLevel = Literal["fresher", "internship", "0-1", "1-2", "2-3", "3-5", "5+"]
@@ -96,19 +96,50 @@ class SettingsOut(ORM, SettingsIn):
     pass
 
 
-class ExperienceIn(BaseModel):
+def _clean_lines(v: list[str]) -> list[str]:
+    return [x.strip() for x in v if x and x.strip()]
+
+
+class _Dated(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def _dates_in_order(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("The end date is before the start date.")
+        return self
+
+
+class ReviewOut(ORM):
+    """Provenance and review state shared by entries extracted from a resume."""
+
+    source_ids: list[str] = Field(default_factory=list)
+    confidence: float | None = None
+    review_reasons: list[str] = Field(default_factory=list)
+    needs_review: bool = False
+    user_edited: bool = False
+
+
+class ExperienceIn(_Dated):
     category: Literal["professional", "internship", "freelance"]
     employer: str = Field(min_length=1, max_length=200)
     title: str | None = Field(default=None, max_length=200)
     location: str | None = Field(default=None, max_length=200)
-    start_date: date | None = None
-    end_date: date | None = None
     is_current: bool = False
     bullets: list[str] = Field(default_factory=list, max_length=30)
     verified: bool = True
 
+    _bullets = field_validator("bullets")(classmethod(lambda cls, v: _clean_lines(v)))
 
-class ExperienceOut(ORM, ExperienceIn):
+    @model_validator(mode="after")
+    def _current_has_no_end(self):
+        if self.is_current:
+            self.end_date = None
+        return self
+
+
+class ExperienceOut(ReviewOut, ExperienceIn):
     id: str
     resume_id: str | None
 
@@ -122,22 +153,23 @@ class ProjectIn(BaseModel):
     verified: bool = True
 
 
-class ProjectOut(ORM, ProjectIn):
+class ProjectOut(ReviewOut, ProjectIn):
     id: str
     resume_id: str | None
 
 
-class EducationIn(BaseModel):
+class EducationIn(_Dated):
     institution: str = Field(min_length=1, max_length=300)
     degree: str | None = Field(default=None, max_length=200)
     field: str | None = Field(default=None, max_length=200)
-    start_date: date | None = None
-    end_date: date | None = None
     grade: str | None = Field(default=None, max_length=60)
+    details: list[str] = Field(default_factory=list, max_length=30)
     verified: bool = True
 
+    _details = field_validator("details")(classmethod(lambda cls, v: _clean_lines(v)))
 
-class EducationOut(ORM, EducationIn):
+
+class EducationOut(ReviewOut, EducationIn):
     id: str
     resume_id: str | None
 
@@ -146,10 +178,13 @@ class CertificationIn(BaseModel):
     name: str = Field(min_length=1, max_length=300)
     issuer: str | None = Field(default=None, max_length=200)
     issued_on: date | None = None
+    details: list[str] = Field(default_factory=list, max_length=30)
     verified: bool = True
 
+    _details = field_validator("details")(classmethod(lambda cls, v: _clean_lines(v)))
 
-class CertificationOut(ORM, CertificationIn):
+
+class CertificationOut(ReviewOut, CertificationIn):
     id: str
     resume_id: str | None
 

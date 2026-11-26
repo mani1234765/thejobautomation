@@ -16,6 +16,8 @@ from app.domain.resume_parser import ParsedResume, parse_document
 from app.models import Job, Resume, ResumeSection, ResumeVersion, User
 from app.security.uploads import FileStore, ValidatedFile
 from app.services import audit
+from app.services import profile as profile_svc
+from app.services import resume_review as review
 
 
 def create_resume(db: Session, store: FileStore, user: User, f: ValidatedFile, name: str | None) -> Resume:
@@ -114,12 +116,17 @@ _TAILOR_SCHEMA = {
 }
 
 
-def _paragraph_map(resume: Resume, store: FileStore) -> dict[str, dict[str, Any]]:
-    """paragraph id → {text, section, is_list} for paragraphs in editable sections."""
+def _paragraph_map(db: Session, resume: Resume, store: FileStore) -> dict[str, dict[str, Any]]:
+    """paragraph id → {text, section, is_list} for paragraphs in editable sections.
+
+    Sections come from the user's corrected profile where it covers a paragraph (an entry moved from
+    Experience to Education is treated as education), falling back to the detected structure.
+    """
     section_of: dict[str, str] = {}
     for s in resume.sections:
         for pid in s.paragraph_ids:
             section_of[pid] = s.canonical_type
+    section_of.update(review.corrected_section_map(db, resume))
     out: dict[str, dict[str, Any]] = {}
     if resume.file_format == "docx":
         for p in docx_document.read_paragraphs(store.read(resume.storage_key)):
@@ -154,8 +161,8 @@ def _reorder_skills(text: str, priority: list[str]) -> str | None:
     return f"{label}{sep} {body}" if sep else body
 
 
-def analyse_fit(resume: Resume, job: Job) -> dict[str, Any]:
-    have = set((resume.extracted or {}).get("skills", {}).keys())
+def analyse_fit(have: set[str], job: Job) -> dict[str, Any]:
+    """Skill fit against the job, from the user's corrected profile skills."""
     req, pref = job.required_skills or [], job.preferred_skills or []
     return {
         "matched_required": [s for s in req if s in have],
@@ -170,8 +177,8 @@ def analyse_fit(resume: Resume, job: Job) -> dict[str, Any]:
 def tailor(db: Session, store: FileStore, user: User, resume: Resume, job: Job, *, actor: str) -> ResumeVersion:
     if resume.parse_status != "parsed":
         raise ValueError("Parse this resume before tailoring it.")
-    paras = _paragraph_map(resume, store)
-    analysis = analyse_fit(resume, job)
+    paras = _paragraph_map(db, resume, store)
+    analysis = analyse_fit(set(profile_svc.candidate_profile(db, user).skills), job)
     priority = analysis["matched_required"] + analysis["matched_preferred"]
     changes: list[dict[str, Any]] = []
 
@@ -202,7 +209,8 @@ def tailor(db: Session, store: FileStore, user: User, resume: Resume, job: Job, 
     ai_note = None
     if ai.status()["configured"]:
         try:
-            evidence = resume.text_content or ""
+            corrected = review.profile_text(db, user)
+            evidence = f"{resume.text_content or ''}\n{corrected}"
             candidates = {pid: p for pid, p in paras.items() if p["section"] != "skills"}
             listing = "\n".join(f"[{pid}] ({p['section']}) {p['text']}" for pid, p in list(candidates.items())[:80])
             prompt = (
@@ -213,6 +221,9 @@ def tailor(db: Session, store: FileStore, user: User, resume: Resume, job: Job, 
                 "already in the resume.\n- Keep roughly the same length so the layout is preserved.\n"
                 "- Propose at most 8 changes, only where they clearly improve relevance.\n\n"
                 f"Resume paragraphs:\n{untrusted('resume', listing)}\n\n"
+                "The candidate has reviewed and corrected this structured profile; where it disagrees with the "
+                "paragraph labels above, trust the profile:\n"
+                f"{untrusted('reviewed_profile', corrected, 8000)}\n\n"
                 f"Job: {job.title} at {job.company.name}\n{untrusted('job_description', job.description_text, 12000)}"
             )
             result = ai.complete(
