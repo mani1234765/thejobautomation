@@ -307,3 +307,19 @@ on the old default of 10 to 10,000; other saved values are kept.
 * Backup verification: integrity check ok; counts identical to the live database.
 * After migrating: 16 of 16 users at 10,000; users 16, resumes 15, applications 10, jobs 183, skills 347,
   approval_requests 6 and audit_events 220 unchanged; integrity ok; `alembic check` clean.
+
+## Phase 3 — M1: sync safety and board reliability (2026-11-27, uncommitted until approved)
+
+| Defect | Before | After | Test |
+|---|---|---|---|
+| P1 empty response closes all jobs | 2 visible → 0, status "ok" | Nothing closed, status "warning" with explanation; baseline count kept | `test_empty_response_after_listings_closes_nothing` |
+| P2 malformed listing crashes sync | Unhandled `KeyError`/`TypeError` | Listing skipped with a reason; malformed responses → board error; adapter exceptions caught (HTTP 200, status "error") | contract + `test_board_errors_and_adapter_crashes_change_nothing` |
+| P3 no retries | 1 attempt | 3 attempts, full-jitter backoff, Retry-After honoured (≤30 s), 45 s budget, no retry on 4xx | retry tests |
+| P4 temporary URL loss closes the job | 2 → 1 | Kept open; status "partial" | `test_invalid_listing_is_skipped_and_not_closed`, `test_temporary_url_loss_in_a_legacy_adapter_keeps_the_job` |
+| P5 duplicate ids processed twice | 2 jobs from 1 id | 1 record; duplicate reported as skipped | `test_duplicate_ids_create_one_record`, contract |
+| P6 Lever pay without currency "verified" | Currency `None`, verified | Re-assessed: the *amounts* are verified (structured ATS field), so the label stays. The currency is now normalised (`usd` → USD) and missing currency stays unknown, so eligibility returns manual review (`SAL_CURRENCY_UNKNOWN`) | `test_lever_contract`, `test_lever_pay_without_currency_goes_to_manual_review` |
+| P15 unsafe URLs stored | `javascript:` stored | Only absolute http(s) URLs; invalid job URL → listing skipped, invalid apply URL → dropped | `test_safe_url`, contracts |
+| Suspicious drop | — | Fewer than half of the last trusted count (boards with 10+ listings) → nothing closed, "warning" | `test_suspicious_drop_closes_nothing_but_a_normal_drop_does` |
+| Saved/applied decisions | Recomputed silently when the profile or listing changed (same policy) | Never recomputed automatically; kept and marked outdated with reasons (policy, engine, profile, listing) | `test_saved_decision_is_kept_and_marked_outdated_when_the_listing_changes` |
+
+Coverage: `providers.py` 24% → 97%, `base.py` 72% → 94%.

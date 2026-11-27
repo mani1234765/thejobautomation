@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import logging
+from dataclasses import asdict, dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -14,23 +15,56 @@ from app.domain import fx
 from app.domain import job_parsing as jp
 from app.domain.matching import SCORING_VERSION, JobFacts, compute_match
 from app.domain.salary_policy import SalaryFacts
-from app.integrations.sources.base import NormalizedJob, SourceError
+from app.integrations.sources.base import FetchResult, NormalizedJob, SourceError, safe_url
 from app.integrations.sources.providers import get_adapter
 from app.models import Application, Company, Job, JobMatch, JobSource, SavedJob, User
 from app.services import audit
 from app.services.profile import candidate_profile, salary_policy
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class SyncResult:
     source_id: str
-    status: str
+    status: str  # ok | partial | warning | error
     fetched: int = 0
     created: int = 0
     updated: int = 0
     closed: int = 0
     duplicates: int = 0
+    skipped: int = 0
+    closing_skipped: bool = False
     error: str | None = None
+    message: str | None = None
+
+
+# A sync closes postings that disappeared from the board. It does so only when the response looks complete:
+# never after an empty response that follows a non-empty one, never after a suspicious drop, and never for
+# listings that were present but failed validation.
+SUSPICIOUS_DROP_MIN_PREVIOUS = 10  # boards this small can legitimately halve
+SUSPICIOUS_DROP_RATIO = 0.5  # fewer than half of the last successful count is suspicious
+
+
+def closing_decision(previous: int | None, result: FetchResult) -> tuple[bool, str | None]:
+    """(may close missing postings?, explanation when not). `previous` is the last trusted listing count."""
+    valid = len(result.jobs)
+    if result.unidentified_skips:
+        return False, (
+            f"{result.unidentified_skips} listing(s) couldn't be identified, so the response may be incomplete; "
+            "no jobs were closed."
+        )
+    if valid == 0 and previous:
+        return False, (
+            f"The board returned no valid listings (previously {previous}). This can be a temporary board "
+            "problem, so existing jobs were kept open. If the board is really empty, pause or remove it."
+        )
+    if previous and previous >= SUSPICIOUS_DROP_MIN_PREVIOUS and valid < previous * SUSPICIOUS_DROP_RATIO:
+        return False, (
+            f"The board returned {valid} listings, less than half of the previous {previous}. Existing jobs were "
+            "kept open until a sync confirms the drop."
+        )
+    return True, None
 
 
 def _company(db: Session, name: str) -> Company:
@@ -72,15 +106,28 @@ def _apply(job: Job, n: NormalizedJob) -> None:
     job.normalized_title = jp.normalize_title(n.title)
 
 
-def upsert_jobs(db: Session, source_key: str, company_name: str, jobs: list[NormalizedJob]) -> SyncResult:
+def upsert_jobs(
+    db: Session,
+    source_key: str,
+    company_name: str,
+    jobs: list[NormalizedJob],
+    *,
+    close_missing: bool = True,
+    keep_open: set[str] | None = None,
+) -> SyncResult:
     now = utcnow()
     res = SyncResult(source_id="", status="ok", fetched=len(jobs))
     company = _company(db, company_name)
-    seen: set[str] = set()
+    keep: set[str] = set(keep_open or ())  # present on the board but not usable now: never closed
+    processed: set[str] = set()
     for n in jobs:
-        if not n.title or not n.url:
+        if not n.title or not safe_url(n.url):
+            keep.add(n.external_id)
             continue
-        seen.add(n.external_id)
+        if n.external_id in processed:
+            continue
+        processed.add(n.external_id)
+        n.url, n.apply_url = safe_url(n.url) or n.url, safe_url(n.apply_url)
         fp = jp.fingerprint(company.name, n.title, n.location)
         job = db.scalar(select(Job).where(Job.provider == n.provider, Job.external_id == n.external_id))
         if job is None:
@@ -112,39 +159,57 @@ def upsert_jobs(db: Session, source_key: str, company_name: str, jobs: list[Norm
             _apply(job, n)
             job.fingerprint, job.last_seen_at, job.closed_at = fp, now, None
             res.updated += 1
-    # Postings that disappeared from the board are closed (kept for history; applications reference them).
-    stale = db.execute(
-        update(Job)
-        .where(Job.source_key == source_key, Job.closed_at.is_(None), Job.external_id.not_in(seen) if seen else true())
-        .values(closed_at=now)
-        .execution_options(synchronize_session=False)
-    )
-    res.closed = stale.rowcount or 0
+    if close_missing:
+        # Postings that disappeared from the board are closed (kept for history; applications reference them).
+        stale = db.execute(
+            update(Job)
+            .where(
+                Job.source_key == source_key,
+                Job.closed_at.is_(None),
+                Job.external_id.not_in(processed | keep) if processed | keep else true(),
+            )
+            .values(closed_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        res.closed = stale.rowcount or 0
     return res
 
 
 def sync_source(db: Session, source: JobSource, *, actor: str = "user") -> SyncResult:
+    """Fetch a board and update its jobs. Status: ok, partial (some listings skipped), warning (response
+    looked incomplete, so nothing was closed) or error (the board couldn't be read; nothing changed)."""
     try:
-        company, jobs = get_adapter(source.provider).fetch(source.identifier)
+        fetched = get_adapter(source.provider).fetch(source.identifier)
+        result = fetched if isinstance(fetched, FetchResult) else FetchResult(*fetched, raw_count=len(fetched[1]))
     except SourceError as exc:
-        source.last_synced_at, source.last_status, source.last_error = utcnow(), "error", str(exc)
-        audit.record(
-            db,
-            user_id=source.user_id,
-            actor=actor,
-            action="job_source.sync_failed",
-            entity_type="job_source",
-            entity_id=source.id,
-            meta={"error": str(exc)},
+        return _sync_failed(db, source, actor, str(exc))
+    except Exception as exc:  # noqa: BLE001 - an adapter bug must not crash the sync or leave the status stale
+        log.exception("job_source_adapter_crashed", extra={"provider": source.provider})
+        return _sync_failed(
+            db, source, actor, f"The {source.provider} response couldn't be processed ({type(exc).__name__})."
         )
-        db.commit()
-        return SyncResult(source_id=source.id, status="error", error=str(exc))
-    res = upsert_jobs(db, source.source_key, company, jobs)
-    res.source_id = source.id
+
+    previous = source.last_job_count
+    may_close, why_not = closing_decision(previous, result)
+    res = upsert_jobs(
+        db, source.source_key, result.company, result.jobs, close_missing=may_close, keep_open=result.skipped_ids
+    )
+    res.source_id, res.skipped, res.closing_skipped = source.id, len(result.skipped), not may_close
+    notes: list[str] = []
+    if result.skipped:
+        reasons = sorted({s.reason for s in result.skipped})
+        notes.append(f"{len(result.skipped)} listing(s) skipped ({'; '.join(reasons)}); they were not closed.")
+    if why_not:
+        notes.append(why_not)
+    res.status = "warning" if not may_close else "partial" if result.skipped else "ok"
+    res.message = " ".join(notes) or None
     if source.display_name in (source.identifier, ""):
-        source.display_name = company
-    source.last_synced_at, source.last_status, source.last_error = utcnow(), "ok", None
-    source.last_job_count = len(jobs)
+        source.display_name = result.company
+    source.last_synced_at, source.last_status, source.last_error = utcnow(), res.status, res.message
+    if may_close or previous is None:
+        # Only a trusted response becomes the baseline for the next suspicious-drop check; a first sync
+        # always sets it (there is nothing to close yet).
+        source.last_job_count = len(result.jobs)
     audit.record(
         db,
         user_id=source.user_id,
@@ -152,10 +217,32 @@ def sync_source(db: Session, source: JobSource, *, actor: str = "user") -> SyncR
         action="job_source.synced",
         entity_type="job_source",
         entity_id=source.id,
-        meta={"fetched": res.fetched, "created": res.created, "closed": res.closed},
+        meta={
+            "status": res.status,
+            "fetched": res.fetched,
+            "created": res.created,
+            "closed": res.closed,
+            "skipped": res.skipped,
+            "closing_skipped": res.closing_skipped,
+        },
     )
     db.commit()
     return res
+
+
+def _sync_failed(db: Session, source: JobSource, actor: str, error: str) -> SyncResult:
+    source.last_synced_at, source.last_status, source.last_error = utcnow(), "error", error
+    audit.record(
+        db,
+        user_id=source.user_id,
+        actor=actor,
+        action="job_source.sync_failed",
+        entity_type="job_source",
+        entity_id=source.id,
+        meta={"error": error},
+    )
+    db.commit()
+    return SyncResult(source_id=source.id, status="error", error=error)
 
 
 # ── Matching ───────────────────────────────────────────────────────────────────────────────────
@@ -229,7 +316,38 @@ def _policy_key(snap: dict[str, Any] | None) -> str | None:
     return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
 
 
+def _facts_digest(job: Job) -> str:
+    """Identity of everything about the listing that the decision depends on."""
+    return hashlib.sha256(json.dumps(asdict(job_facts(job)), sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _inputs(cand_digest: str, job: Job, pkey: str | None) -> dict[str, str | None]:
+    return {"profile": cand_digest, "listing": _facts_digest(job), "policy": pkey, "engine": SCORING_VERSION}
+
+
+OUTDATED_LABEL = {
+    "policy": "your eligibility settings changed",
+    "engine": "JobPilot's eligibility rules were updated",
+    "profile": "your profile changed",
+    "listing": "the job listing changed",
+    "untracked": "it was evaluated before JobPilot tracked what each decision was based on",
+}
+
+
+def outdated_reasons(db: Session, user: User, job: Job, match: JobMatch | None) -> list[str]:
+    """Why a stored decision no longer reflects its current inputs ([] = current)."""
+    if match is None:
+        return []
+    stored = (match.eligibility or {}).get("inputs")
+    if not stored:
+        legacy_policy = _policy_key(match.eligibility.get("policy")) != _policy_key(policy_snapshot(user))
+        return ["policy"] if legacy_policy else ["untracked"]
+    now = _inputs(candidate_profile(db, user).digest(), job, _policy_key(policy_snapshot(user)))
+    return [k for k in ("policy", "engine", "profile", "listing") if stored.get(k) != now[k]]
+
+
 def is_outdated(user: User, match: JobMatch | None) -> bool:
+    """Policy-only check (kept for callers without a job/session); prefer outdated_reasons."""
     return bool(match) and _policy_key(match.eligibility.get("policy")) != _policy_key(policy_snapshot(user))
 
 
@@ -240,19 +358,20 @@ def _acted_job_ids(db: Session, user_id: str) -> set[str]:
 
 
 def ensure_matches(db: Session, user: User, job_ids: list[str] | None = None, *, force: bool = False) -> int:
-    """(Re)compute match rows whose inputs changed. Deterministic, so caching by input hash is safe.
+    """(Re)compute decisions whose inputs changed. Deterministic, so caching by input fingerprint is safe.
 
-    Jobs the user has saved or applied to keep the decision (and policy snapshot) they were evaluated
-    under when the *policy* changes, e.g. a new salary threshold. Such a kept decision is not recomputed
-    for any reason, including later profile corrections, until the user re-evaluates it (`force`), so
-    history isn't silently rewritten. While the policy is unchanged, profile corrections do refresh
-    decisions for every job, saved and applied ones included.
+    Each decision records what it was based on: the candidate profile, the listing's facts, the policy
+    and the engine version. For jobs the user has saved or applied to, a decision is never recomputed
+    automatically — not for a policy change, a profile correction, a re-synced listing or an engine
+    update. It is kept, reported as outdated (see `outdated_reasons`), and recomputed only when the user
+    asks (`force`). Other jobs are recomputed whenever an input changes.
     """
     cand = candidate_profile(db, user)
+    cand_digest = cand.digest()
     fxc = fx.current_context()
     snap = policy_snapshot(user, fxc)
     pkey = _policy_key(snap)
-    digest = hashlib.sha256(f"{cand.digest()}|{pkey}".encode()).hexdigest()
+    digest = hashlib.sha256(f"{cand_digest}|{pkey}".encode()).hexdigest()
     policy = salary_policy(user)
     q = select(Job).where(visible_jobs_clause(db, user.id))
     if job_ids is not None:
@@ -262,15 +381,16 @@ def ensure_matches(db: Session, user: User, job_ids: list[str] | None = None, *,
     now, n = utcnow(), 0
     for job in db.scalars(q):
         m = existing.get(job.id)
+        inputs = _inputs(cand_digest, job, pkey)
         if m and not force:
-            if m.profile_hash == digest and m.scoring_version == SCORING_VERSION and m.computed_at >= job.updated_at:
+            if (m.eligibility or {}).get("inputs") == inputs and m.scoring_version == SCORING_VERSION:
                 continue
-            if job.id in acted and _policy_key(m.eligibility.get("policy")) != pkey:
-                continue  # historical decision under an earlier policy: re-evaluated only on request
+            if job.id in acted:
+                continue  # historical decision: kept and shown as outdated until the user re-evaluates
         r = compute_match(job_facts(job), cand, policy, fxc)
         data = r.as_dict()
         eligibility = data.pop("eligibility")
-        eligibility["policy"], eligibility["evaluated_at"] = snap, now.isoformat()
+        eligibility["policy"], eligibility["evaluated_at"], eligibility["inputs"] = snap, now.isoformat(), inputs
         if m is None:
             m = JobMatch(user_id=user.id, job_id=job.id)
             db.add(m)
@@ -284,8 +404,11 @@ def ensure_matches(db: Session, user: User, job_ids: list[str] | None = None, *,
 def reevaluate(db: Session, user: User, job_ids: list[str] | None = None, *, actor: str) -> int:
     """Explicitly re-evaluate decisions kept from an earlier policy (all outdated ones by default)."""
     if job_ids is None:
-        matches = db.scalars(select(JobMatch).where(JobMatch.user_id == user.id))
-        job_ids = [m.job_id for m in matches if is_outdated(user, m)]
+        job_ids = [
+            m.job_id
+            for m in db.scalars(select(JobMatch).where(JobMatch.user_id == user.id))
+            if (job := db.get(Job, m.job_id)) is not None and outdated_reasons(db, user, job, m)
+        ]
     if not job_ids:
         return 0
     n = ensure_matches(db, user, job_ids, force=True)

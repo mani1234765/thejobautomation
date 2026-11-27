@@ -10,6 +10,7 @@
 | Resume Review & Editor | `uv run pytest tests/test_resume_review.py` | 14 | Edit/add/delete, move (education out of experience, category changes, to summary/skills), split and merge, validation, persistence across a restart, cross-user isolation, original file untouched, re-extraction keeps edits/moves/deletions, legacy rows adopted, tailoring/matching/answers read the corrected profile |
 | Eligibility & policy (Phase 2) | `uv run pytest tests/test_eligibility_policy.py` | 70 | Salary boundaries (₹8 exactly, ₹8.01, ₹6–12, max-only, monthly), undisclosed/unverified, missing or ambiguous currency, INR/USD/PLN conversion, missing/stale/invalid rates, stipend separation, per-rule verdicts with quoted evidence, missing and conflicting information, threshold validation/persistence/restart/per-user, daily limit 1/10/9,999/10,000 and 10,001 rejected, token bypass, clamping, historical decisions and re-evaluation |
 | Phase 2 review fixes | `uv run pytest tests/test_phase2_fixes.py` | 41 | **Simultaneous PostgreSQL submission starts never exceed the limit** (plus a control that fails without the lock), same-application double start, tolerant `GET /settings` with normalisation report, city aliases × work arrangements, whole-word city matching, skills review vs explicit-mandatory rejection, review when a preferred fact is missing |
+| Job sources (Phase 3 M1) | `uv run pytest tests/test_job_sources.py` | 45 | Sanitized Greenhouse/Lever/Ashby contract fixtures (`tests/board_fixtures/`), malformed responses, retries (5xx, timeouts, 429 + Retry-After, cap, budget, no retry on 4xx), URL validation, empty/suspicious/partial/unidentified responses never closing jobs, adapter crashes, duplicate ids, saved decisions kept and marked outdated |
 | Backend workflows | `uv run pytest tests/test_workflows.py` | 17 | Resume → profile, discovery, tailoring, application lifecycle, daily limit, MCP can't bypass approval, automations, assistant loop, AI budget, interviews, dashboard/analytics, **daily summary** |
 | AI features | `uv run pytest tests/test_ai_features.py` | 5 | Cover letters, drafted vs unknown answers, honest degradation on provider failure, interview plan + feedback, prompt-injection containment, budget for unpriced models |
 | Integration contracts | `uv run pytest tests/test_integration_contracts.py` | 12 | Exact requests/responses for Anthropic (official SDK via mock transport), OpenAI-compatible, Google OAuth/Gmail (exchange, refresh, list, draft, revocation, **full sync with classification + acknowledgement**), WhatsApp (request, errors, worker delivery states) |
@@ -19,8 +20,8 @@
 | Frontend unit | `cd frontend && npm test` | 25 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store, **command-menu shortcut (⌘K and Ctrl+K)** |
 | E2E | `cd frontend && npx playwright test` | 19 | Full journey on a real public job board, **resume review: edit, move, reload, re-extract**, **command menu via the platform shortcut and Ctrl+K**, axe on every page, **CSP header per request + zero CSP violations** |
 
-Backend total: **251** (all pass on PostgreSQL 17 + Redis 7, coverage 87%); on SQLite without Redis, 245 pass and
-6 skip (2 Redis-only, 4 PostgreSQL-only concurrency tests). Grand total **303** automated tests (251 backend,
+Backend total: **296** (all pass on PostgreSQL 17 + Redis 7, coverage 88%); on SQLite without Redis, 290 pass and
+6 skip (2 Redis-only, 4 PostgreSQL-only concurrency tests). Grand total **348** automated tests (296 backend,
 8 MCP, 25 frontend, 19 E2E).
 
 ### Running against real PostgreSQL and Redis

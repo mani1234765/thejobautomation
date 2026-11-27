@@ -6,9 +6,16 @@ scrape HTML pages, never authenticate as a user and never bypass rate limits or 
 
 from __future__ import annotations
 
+import logging
+import random
+import re
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from email.utils import parsedate_to_datetime
+from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -16,10 +23,100 @@ from app.config import get_settings
 from app.domain import job_parsing as jp
 
 USER_AGENT = "JobPilot/0.1 (job-search assistant; public job-board API client)"
+log = logging.getLogger(__name__)
+
+# Retry policy for transient failures (timeouts, connection errors, HTTP 5xx and 429). Attempts are capped
+# and so is the total time, because a sync can run inside a user's request.
+MAX_ATTEMPTS = 3
+BACKOFF_BASE_SECONDS = 1.0
+BACKOFF_CAP_SECONDS = 8.0
+RETRY_AFTER_CAP_SECONDS = 30.0
+TOTAL_BUDGET_SECONDS = 45.0
+_sleep: Callable[[float], None] = time.sleep  # replaced in tests
+_monotonic: Callable[[], float] = time.monotonic
 
 
 class SourceError(RuntimeError):
     pass
+
+
+def safe_url(value: object) -> str | None:
+    """The URL if it is an absolute http(s) URL with a host, else None (rejects javascript:, data:, etc.)."""
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if not url or len(url) > 2000 or re.search(r"[\x00-\x20\x7f]", url):
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return None
+    return url
+
+
+@dataclass
+class Skipped:
+    external_id: str | None
+    reason: str
+
+
+@dataclass
+class FetchResult:
+    """What an adapter got from a board: valid listings, listings it skipped (and why), and how many the
+    board returned. Skipped listings with a known id are never closed by the sync."""
+
+    company: str
+    jobs: list[NormalizedJob]
+    skipped: list[Skipped] = field(default_factory=list)
+    raw_count: int = 0
+
+    @property
+    def skipped_ids(self) -> set[str]:
+        return {s.external_id for s in self.skipped if s.external_id}
+
+    @property
+    def unidentified_skips(self) -> int:
+        return sum(1 for s in self.skipped if not s.external_id)
+
+
+def build_result(
+    provider: str, company: str, items: Iterable[Any], make: Callable[[dict[str, Any]], NormalizedJob]
+) -> FetchResult:
+    """Validate each raw listing and build it, skipping (not crashing on) malformed ones and repeated ids."""
+    res = FetchResult(company=company, jobs=[])
+    seen: set[str] = set()
+    for raw in items:
+        res.raw_count += 1
+        if not isinstance(raw, dict):
+            res.skipped.append(Skipped(None, "listing is not an object"))
+            continue
+        rid = raw.get("id")
+        ext = str(rid).strip() if isinstance(rid, (str, int)) and not isinstance(rid, bool) else ""
+        if not ext:
+            res.skipped.append(Skipped(None, "listing has no id"))
+            continue
+        if ext in seen:
+            res.skipped.append(Skipped(ext, "duplicate id in the same response"))
+            continue
+        seen.add(ext)
+        try:
+            job = make(raw)
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            log.warning("job_listing_invalid", extra={"provider": provider, "id": ext, "error": repr(exc)[:200]})
+            res.skipped.append(Skipped(ext, "listing could not be read"))
+            continue
+        url = safe_url(job.url)
+        if not job.title.strip():
+            res.skipped.append(Skipped(ext, "listing has no title"))
+            continue
+        if url is None:
+            res.skipped.append(Skipped(ext, "listing has no valid http(s) URL"))
+            continue
+        job.url, job.apply_url = url, safe_url(job.apply_url)
+        res.jobs.append(job)
+    return res
 
 
 @dataclass
@@ -74,32 +171,71 @@ class NormalizedJob:
 class JobSourceAdapter(Protocol):
     provider: str
 
-    def fetch(self, identifier: str) -> tuple[str, list[NormalizedJob]]:
-        """Return (company display name, jobs). Raises SourceError with a user-readable message."""
+    def fetch(self, identifier: str) -> FetchResult:
+        """Return validated listings. Raises SourceError with a user-readable message when the board as a
+        whole can't be read (network, HTTP error, malformed response)."""
         ...
 
 
+def _retry_after(r: httpx.Response) -> float | None:
+    value = r.headers.get("retry-after")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            return max(0.0, (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds())
+        except (TypeError, ValueError):
+            return None
+
+
+def _backoff(attempt: int) -> float:
+    """Full-jitter exponential backoff: random in [0, min(cap, base × 2^(attempt-1))]."""
+    return random.uniform(0, min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2 ** (attempt - 1)))  # noqa: S311
+
+
 def http_get_json(url: str, params: dict | None = None) -> object:
-    try:
-        r = httpx.get(
-            url,
-            params=params,
-            timeout=get_settings().job_source_timeout_seconds,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            follow_redirects=True,
-        )
-    except httpx.HTTPError as exc:
-        raise SourceError(f"Network error contacting the job board: {exc.__class__.__name__}") from exc
-    if r.status_code == 404:
-        raise SourceError("Board not found. Check the company's board identifier.")
-    if r.status_code == 429:
-        raise SourceError("The job board is rate limiting requests. JobPilot will retry later.")
-    if r.status_code >= 400:
-        raise SourceError(f"The job board returned HTTP {r.status_code}.")
-    try:
-        return r.json()
-    except ValueError as exc:
-        raise SourceError("The job board returned an unexpected response.") from exc
+    """GET a JSON document, retrying transient failures (timeouts, connection errors, 5xx, 429) with capped
+    exponential backoff and jitter, honouring Retry-After. Permanent 4xx errors are not retried."""
+    started = _monotonic()
+    last: str = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        delay: float | None = None
+        try:
+            r = httpx.get(
+                url,
+                params=params,
+                timeout=get_settings().job_source_timeout_seconds,
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                follow_redirects=True,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last = f"Network error contacting the job board: {exc.__class__.__name__}"
+        else:
+            if r.status_code == 429:
+                last = "The job board is rate limiting requests."
+                delay = _retry_after(r)
+            elif r.status_code >= 500:
+                last = f"The job board returned HTTP {r.status_code}."
+                delay = _retry_after(r)
+            elif r.status_code == 404:
+                raise SourceError("Board not found. Check the company's board identifier.")
+            elif r.status_code >= 400:
+                raise SourceError(f"The job board returned HTTP {r.status_code}.")
+            else:
+                try:
+                    return r.json()
+                except ValueError as exc:
+                    raise SourceError("The job board returned an unexpected response.") from exc
+        if attempt == MAX_ATTEMPTS:
+            break
+        wait = min(delay, RETRY_AFTER_CAP_SECONDS) if delay is not None else _backoff(attempt)
+        if _monotonic() - started + wait > TOTAL_BUDGET_SECONDS:
+            break
+        log.info("job_board_retry", extra={"attempt": attempt, "wait_seconds": round(wait, 2), "reason": last})
+        _sleep(wait)
+    raise SourceError(f"{last} Gave up after {attempt} attempt{'s' if attempt > 1 else ''}.")
 
 
 def parse_dt(value: object) -> datetime | None:

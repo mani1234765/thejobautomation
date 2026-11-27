@@ -56,8 +56,10 @@ class JobDetail(JobCard):
     description_text: str
     match: dict[str, Any] | None
     eligibility_detail: dict[str, Any] | None
-    # True when this decision was made under an earlier policy (e.g. a different salary threshold).
+    # True when the stored decision no longer reflects its inputs; the reasons say which changed
+    # (policy, engine, profile, listing, untracked). Saved/applied jobs keep it until re-evaluated.
     eligibility_outdated: bool = False
+    eligibility_outdated_reasons: list[str] = Field(default_factory=list)
     duplicate_of_id: str | None
 
 
@@ -176,7 +178,8 @@ def _detail(db: DB, p: Principal, job: Job) -> JobDetail:
         description_text=job.description_text,
         match=m.breakdown if m else None,
         eligibility_detail=m.eligibility if m else None,
-        eligibility_outdated=svc.is_outdated(p.user, m),
+        eligibility_outdated=bool(reasons := svc.outdated_reasons(db, p.user, job, m)),
+        eligibility_outdated_reasons=reasons,
         duplicate_of_id=job.duplicate_of_id,
     )
 

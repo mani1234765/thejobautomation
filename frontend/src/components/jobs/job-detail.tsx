@@ -22,6 +22,12 @@ const FACTOR_LABEL: Record<string, string> = {
   skills: "Skills", experience: "Experience", role: "Role fit", location: "Location", level: "Level", employment: "Employment type",
 };
 
+const OUTDATED_REASON: Record<string, string> = {
+  policy: "your eligibility settings changed", engine: "JobPilot's eligibility rules were updated",
+  profile: "your profile changed", listing: "the job listing changed",
+  untracked: "JobPilot started tracking what each decision is based on",
+};
+
 const RULE_LABEL: Record<EligibilityCheck["rule"], string> = {
   SALARY: "Salary", STIPEND: "Stipend", SKILLS: "Skills", EXPERIENCE: "Experience", SENIORITY: "Seniority",
   LOCATION: "Location", EMPLOYMENT: "Employment type",
@@ -39,9 +45,11 @@ function EligibilityPanel({ job }: { job: JobDetailT }) {
   const reevaluate = useAction(() => api.post(`/jobs/${job.id}/reevaluate`), {
     invalidate: [keys.job(job.id), ["jobs"], keys.dashboard], success: "Re-evaluated with your current policy",
   });
+  const why = (job.eligibility_outdated_reasons ?? []).map((r) => OUTDATED_REASON[r]).filter(Boolean);
   const outdated = job.eligibility_outdated && (
-    <Callout tone="neutral" icon={History} title="Decided under an earlier policy">
-      <p>{e.policy ? `Evaluated with a ₹${e.policy.min_ctc_lpa} LPA minimum${e.evaluated_at ? ` on ${formatDate(e.evaluated_at)}` : ""}.` : "Evaluated before eligibility rules were updated."} Your settings have changed since; this decision is kept as it was until you re-evaluate.</p>
+    <Callout tone="neutral" icon={History} title="This decision may be out of date">
+      <p>{e.policy ? `Evaluated with a ₹${e.policy.min_ctc_lpa} LPA minimum${e.evaluated_at ? ` on ${formatDate(e.evaluated_at)}` : ""}.` : "Evaluated before eligibility rules were updated."}{" "}
+        Since then {why.length ? why.join(", ") : "something it was based on has changed"}. It&apos;s kept as it was until you re-evaluate.</p>
       <Button size="sm" className="mt-2" loading={reevaluate.isPending} onClick={() => reevaluate.mutate(undefined)}><RefreshCw /> Re-evaluate</Button>
     </Callout>
   );

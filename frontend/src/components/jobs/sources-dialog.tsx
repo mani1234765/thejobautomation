@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, RefreshCw, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Switch } from "@/components/ui/controls";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,12 @@ export function SourcesDialogContent() {
 
   const add = useAction(() => api.post<JobSource>("/job-sources", { provider, identifier }), {
     invalidate,
-    success: (s) => s.last_status === "ok" ? `Following ${s.display_name} — ${s.last_job_count} open roles` : null,
+    success: (s) => s.last_status === "error" ? null : `Following ${s.display_name} — ${s.last_job_count ?? 0} open roles`,
     onSuccess: () => setIdentifier(""),
   });
   const sync = useAction((id: string) => api.post<JobSource>(`/job-sources/${id}/sync`), {
-    invalidate, success: (s) => s.last_status === "ok" ? `Synced ${s.display_name}` : `Sync failed: ${s.last_error}`,
+    invalidate, success: (s) => s.last_status === "ok" ? `Synced ${s.display_name}`
+      : s.last_status === "error" ? `Sync failed: ${s.last_error}` : `Synced ${s.display_name} with warnings`,
   });
   const toggle = useAction((v: { id: string; enabled: boolean }) => api.patch(`/job-sources/${v.id}`, { enabled: v.enabled }), { invalidate });
   const remove = useAction((id: string) => api.del(`/job-sources/${id}`), { invalidate, success: "Board removed", onSuccess: () => setRemoving(null) });
@@ -71,6 +72,8 @@ export function SourcesDialogContent() {
               <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
                 {s.last_status === "error" ? (
                   <Tooltip content={s.last_error}><AlertCircle className="size-4 shrink-0 text-danger" aria-label="Last sync failed" /></Tooltip>
+                ) : s.last_status === "warning" || s.last_status === "partial" ? (
+                  <Tooltip content={s.last_error}><AlertTriangle className="size-4 shrink-0 text-warning" aria-label={s.last_status === "warning" ? "Last sync looked incomplete" : "Some listings were skipped"} /></Tooltip>
                 ) : (
                   <CheckCircle2 className="size-4 shrink-0 text-positive" aria-label="Healthy" />
                 )}
@@ -80,7 +83,8 @@ export function SourcesDialogContent() {
                   </p>
                   <p className="truncate text-xs text-fg-muted">
                     {s.last_status === "error" ? s.last_error
-                      : `${s.last_job_count ?? 0} open roles · synced ${relativeTime(s.last_synced_at)}`}
+                      : `${s.last_job_count ?? 0} open roles · synced ${relativeTime(s.last_synced_at)}`
+                        + (s.last_status === "warning" || s.last_status === "partial" ? ` · ${s.last_error}` : "")}
                   </p>
                 </div>
                 <Tooltip content="Sync now">

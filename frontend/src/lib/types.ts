@@ -223,6 +223,7 @@ export interface JobDetail extends JobCard {
   match: MatchBreakdown | null;
   eligibility_detail: Eligibility | null;
   eligibility_outdated: boolean;
+  eligibility_outdated_reasons?: ("policy" | "engine" | "profile" | "listing" | "untracked")[];
   duplicate_of_id: string | null;
 }
 
@@ -241,7 +242,8 @@ export interface JobSource {
   display_name: string;
   enabled: boolean;
   last_synced_at: string | null;
-  last_status: "ok" | "error" | null;
+  /** ok · partial (some listings skipped) · warning (response looked incomplete; nothing closed) · error */
+  last_status: "ok" | "partial" | "warning" | "error" | null;
   last_error: string | null;
   last_job_count: number | null;
 }

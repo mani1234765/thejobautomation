@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Phase 3 M1: sync safety and board reliability
+
+### Fixed
+- **An empty successful board response no longer closes every job.** Missing postings are closed only
+  when the response looks complete. Nothing is closed when:
+  - an empty result follows a non-empty one;
+  - the count falls below half of the last trusted count (boards with 10+ listings);
+  - any listing couldn't be identified.
+- Malformed listings (no id, unreadable fields, no title, non-http(s) URL) are skipped with a reason
+  instead of crashing the sync, and listings that are present but unusable are never closed.
+- Malformed responses (wrong shape, `"jobs": null`, HTML) are reported as board errors. Unexpected adapter
+  exceptions are caught, so the request still succeeds and the board's status is recorded.
+- Repeated ids within one response produce one record.
+- Transient failures (timeouts, connection errors, HTTP 5xx and 429) are retried: up to 3 attempts, full
+  jitter exponential backoff (1 s base, 8 s cap), `Retry-After` honoured (capped at 30 s), 45 s total
+  budget. Permanent 4xx errors are not retried.
+- Job and apply URLs must be absolute http(s) URLs (`javascript:`, `data:` and the like are rejected).
+- Lever currency codes are normalised; pay without a currency stays unknown (manual review).
+
+### Changed
+- Board sync status is now `ok`, `partial` (some listings skipped), `warning` (response looked
+  incomplete, so nothing was closed) or `error`, with an explanation. Shown in Job sources.
+- Saved and applied jobs are never recomputed automatically. Each decision records its inputs (profile,
+  listing facts, policy, engine); when any of them changes, the decision is kept and marked outdated with
+  the reason until the user re-evaluates.
+
 ## Unreleased — Phase 2: policy and eligibility engine
 
 ### Changed (policy)

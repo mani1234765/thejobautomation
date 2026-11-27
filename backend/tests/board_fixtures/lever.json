@@ -1,0 +1,32 @@
+[
+  {
+    "id": "0f1e2d3c-0001-4000-8000-000000000001",
+    "text": "Platform Engineer",
+    "hostedUrl": "https://jobs.lever.co/example-co/0f1e2d3c-0001-4000-8000-000000000001",
+    "applyUrl": "https://jobs.lever.co/example-co/0f1e2d3c-0001-4000-8000-000000000001/apply",
+    "createdAt": 1763900000000,
+    "workplaceType": "remote",
+    "categories": {"commitment": "Full-time", "location": "Remote", "team": "Infrastructure"},
+    "description": "<div>Run our Kubernetes platform.</div>",
+    "lists": [{"text": "Requirements", "content": "<li>Go and Kubernetes</li><li>4+ years of experience</li>"}],
+    "additional": "",
+    "salaryRange": {"currency": "usd", "interval": "per-year-salary", "min": 120000, "max": 150000}
+  },
+  {
+    "id": "0f1e2d3c-0002-4000-8000-000000000002",
+    "text": "Support Engineer",
+    "hostedUrl": "https://jobs.lever.co/example-co/0f1e2d3c-0002-4000-8000-000000000002",
+    "applyUrl": "data:text/html,<script>alert(1)</script>",
+    "createdAt": 1763900000000,
+    "workplaceType": "on-site",
+    "categories": {"commitment": "Contract", "location": "Hyderabad"},
+    "description": "<div>Help customers.</div>",
+    "lists": [],
+    "salaryRange": {"interval": "per-year-salary", "min": 900000, "max": 1200000}
+  },
+  {
+    "text": "Listing without an id",
+    "hostedUrl": "https://jobs.lever.co/example-co/none",
+    "categories": {}
+  }
+]
