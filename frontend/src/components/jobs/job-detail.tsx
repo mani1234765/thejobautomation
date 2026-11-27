@@ -13,7 +13,7 @@ import { FactorBar, ScoreRing } from "@/components/ui/score";
 import { Callout, ErrorState } from "@/components/ui/states";
 import { api } from "@/lib/api";
 import {
-  EMPLOYMENT_LABEL, formatDate, formatExperience, formatSalary, relativeTime, STATUS_META, WORK_MODE_LABEL,
+  EMPLOYMENT_LABEL, formatDate, formatExperience, formatSalary, relativeTime, salarySource, STATUS_META, WORK_MODE_LABEL,
 } from "@/lib/format";
 import { keys, useAction, useJob, useResumes } from "@/lib/queries";
 import type { Application, EligibilityCheck, JobDetail as JobDetailT, ResumeVersion } from "@/lib/types";
@@ -217,7 +217,7 @@ export function JobDetailPanel({ jobId, compareSelected, onToggleCompare }: {
             {exp && <span>{exp}</span>}
             {salary && (
               <Tooltip content={job.salary_disclosure === "verified" ? "Published in the employer's structured pay field" : "Found in the description text — not verified"}>
-                <span className="flex items-center gap-1"><Wallet className="size-3" />{salary}{job.salary_disclosure === "advertised" && " (advertised)"}</span>
+                <span className="flex items-center gap-1"><Wallet className="size-3" />{salarySource(job)} · {salary}</span>
               </Tooltip>
             )}
             <span>Posted {relativeTime(job.posted_at ?? job.first_seen_at)}</span>

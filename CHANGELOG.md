@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — Phase 3 M2: salary extraction
+
+### Changed
+- Salary text parsing recognises:
+  - single values and ranges, including "between X and Y";
+  - Indian digit grouping (₹8,00,000);
+  - thousand (k), lakh (L, lakh, lac, LPA) and crore;
+  - explicit currencies (₹/Rs/INR, US$/USD, €, £, zł/PLN, C$, S$, …);
+  - annual, monthly and hourly periods (per annum, p.a., /yr, a year, monthly, p.m., /hr, …).
+- **Periods are never assumed**: a figure without a stated period has period unknown (LPA implies per
+  annum). The same applies to Lever pay without an interval.
+- **Currency is never assumed**: an explicit code wins over a bare "$", which stays ambiguous.
+- Company figures ("$50M", "₹500 crore revenue"), benefits and other non-pay amounts are not read as salary.
+- **Structured vs description conflicts**: when the employer's pay field and the description state
+  incompatible pay (same currency, known periods, beyond 10%), eligibility is manual review
+  (`SAL_CONFLICT`) with both quoted.
+- Salary provenance is shown separately from currency certainty, e.g. "Employer-provided salary · Currency
+  not stated", "Salary mentioned in the description", "Currency unclear ($)", "Period not stated". The UI
+  no longer shows a ₹ sign for pay without a stated currency.
+- Eligibility engine version 2026.11.4. Saved and applied decisions are kept and marked outdated
+  ("JobPilot's eligibility rules were updated") until re-evaluated; the engine version no longer counts as
+  a change to the user's settings.
+
 ## Unreleased — Phase 3 M1: sync safety and board reliability
 
 ### Fixed

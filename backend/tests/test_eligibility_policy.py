@@ -210,7 +210,10 @@ def test_salary_rejection_names_the_rule_and_quotes_the_listing():
     e = verdict(facts(salary=sal(8 * LAKH, 12 * LAKH, text="CTC: ₹8 - 12 LPA")))
     assert e["verdict"] == "REJECTED" and e["decided_by"] == ["SALARY"]
     s = check(e, "SALARY")
-    assert s["code"] == "SAL_AT_THRESHOLD" and s["evidence"] == ["“CTC: ₹8 - 12 LPA”"]
+    assert s["code"] == "SAL_AT_THRESHOLD" and s["evidence"] == [
+        "Employer-provided salary · 800,000–1,200,000 · INR · per year",  # provenance first (M2)
+        "“CTC: ₹8 - 12 LPA”",
+    ]
     assert e["blocks"] == [s["explanation"]] and e["salary"]["decision"] == "ineligible"
 
 

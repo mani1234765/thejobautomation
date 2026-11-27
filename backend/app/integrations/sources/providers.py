@@ -112,7 +112,7 @@ class LeverAdapter:
                     "per-year-salary": "year",
                     "per-month-salary": "month",
                     "per-hour-wage": "hour",
-                }.get(salary.get("interval", ""), "year")  # period handling is revisited in M2
+                }.get(salary.get("interval") or "")  # an unknown or missing interval stays unknown
                 job.salary_disclosure = "verified"
             return job.enrich()
 

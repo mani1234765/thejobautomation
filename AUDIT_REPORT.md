@@ -323,3 +323,28 @@ on the old default of 10 to 10,000; other saved values are kept.
 | Saved/applied decisions | Recomputed silently when the profile or listing changed (same policy) | Never recomputed automatically; kept and marked outdated with reasons (policy, engine, profile, listing) | `test_saved_decision_is_kept_and_marked_outdated_when_the_listing_changes` |
 
 Coverage: `providers.py` 24% → 97%, `base.py` 72% → 94%.
+
+## Phase 3 — M2: salary extraction (2026-11-27, uncommitted until approved)
+
+**Labelled synthetic set (`tests/data/salary_labelled.json`).** A case counts as correct only when amount,
+currency and period all match.
+
+| Set | Before (0469a98) | After |
+|---|---|---|
+| Development set: 38 snippets (30 with pay, 8 without) | 15/30 correct; precision 79%, recall 50%; 0 false positives | 30/30 correct; 0 false positives |
+| Held-out: 18 snippets written after the parser, measured before any tuning | 3/13 correct; precision 60%, recall 23% | **11/13 correct; precision 92%, recall 85%** |
+| Full set after fixing the two held-out misses ("between X and Y", no-currency pay) and adding one live-shape case | — | 44/44 correct; precision 100%, recall 100%; 13/13 no-pay snippets left empty |
+
+The held-out row is the honest generalisation estimate. The full-set 100% is measured on cases the parser
+was developed against.
+
+**Live public boards** (read-only, coverage only, not accuracy):
+
+| Board | Before: figures found | After: figures found | Notes |
+|---|---|---|---|
+| GitLab (Greenhouse) | 2 | 121 | USD 115, PLN 6. Period unknown: the listings say "Salary Range" without a period |
+| Ramp (Ashby) | 162 | 183 | Before, every figure was assumed annual. After, 164 have period unknown; "$" stays ambiguous |
+| Lever demo | 4 | 4 | Unchanged |
+
+**Conflict check on live data:** 0 conflicts flagged on the 4 live listings where a comparison was
+possible. Ramp's "$" is ambiguous and GitLab is text-only, so they can't be compared.

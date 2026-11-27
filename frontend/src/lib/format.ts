@@ -31,23 +31,30 @@ export function formatDateTime(iso: string | null | undefined) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
-function compactMoney(v: number, currency: string): string {
+function compactMoney(v: number, currency: string | null): string {
   if (currency === "INR") {
     if (v >= 100_000) return `₹${(v / 100_000).toFixed(v % 100_000 === 0 ? 0 : 1)}L`;
-    return `₹${Math.round(v / 1000)}k`;
+    return v >= 1000 ? `₹${Math.round(v / 1000)}k` : `₹${v}`;
   }
-  const symbol = { USD: "$", EUR: "€", GBP: "£" }[currency] ?? `${currency} `;
+  // No currency stated: show the bare figure, never a guessed symbol.
+  const symbol = currency == null ? "" : ({ USD: "$", EUR: "€", GBP: "£", $: "$" } as Record<string, string>)[currency] ?? `${currency} `;
   return v >= 1000 ? `${symbol}${Math.round(v / 1000)}k` : `${symbol}${v}`;
 }
 
-/** Salary as disclosed, or null. Never invents a figure. */
+/** Salary as disclosed, or null. Never invents a figure, a currency or a pay period. */
 export function formatSalary(job: Pick<JobCard, "salary_min" | "salary_max" | "salary_currency" | "salary_period">): string | null {
   const { salary_min: lo, salary_max: hi, salary_currency: cur, salary_period: per } = job;
   if (lo == null && hi == null) return null;
-  const c = cur ?? "INR";
-  const range = lo != null && hi != null && lo !== hi ? `${compactMoney(lo, c)}–${compactMoney(hi, c)}` : compactMoney((lo ?? hi)!, c);
-  const suffix = per === "month" ? "/mo" : per === "hour" ? "/hr" : c === "INR" ? " CTC" : "/yr";
-  return range + suffix;
+  const range = lo != null && hi != null && lo !== hi ? `${compactMoney(lo, cur)}–${compactMoney(hi, cur)}` : compactMoney((lo ?? hi)!, cur);
+  const suffix = per === "month" ? "/mo" : per === "hour" ? "/hr" : per === "year" ? (cur === "INR" ? " CTC" : "/yr") : "";
+  const notes = [cur == null && "Currency not stated", cur === "$" && "Currency unclear ($)", per == null && "Period not stated"].filter(Boolean);
+  return range + suffix + (notes.length ? ` · ${notes.join(" · ")}` : "");
+}
+
+/** Where a salary figure came from: the employer's own pay field, or wording in the description. */
+export function salarySource(job: Pick<JobCard, "salary_min" | "salary_max" | "salary_disclosure">): string | null {
+  if (job.salary_min == null && job.salary_max == null) return null;
+  return job.salary_disclosure === "verified" ? "Employer-provided salary" : "Salary mentioned in the description";
 }
 
 export function formatExperience(min: number | null, max: number | null): string | null {

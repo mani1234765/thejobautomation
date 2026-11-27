@@ -96,10 +96,10 @@ def evaluate(facts: SalaryFacts, policy: SalaryPolicy, fxc: fx.FxContext | None 
         )
     currency = fx.identify(facts.currency)
     if currency is None:
-        shown = f" (“{facts.currency}”)" if facts.currency else ""
+        detail = f"Currency ambiguous (“{facts.currency}”)" if facts.currency else "Currency not stated"
         return SalaryDecision(
             "manual_review",
-            f"The pay's currency is missing or ambiguous{shown}; JobPilot won't assume INR.",
+            f"Employer-provided salary · {detail}. JobPilot won't assume INR — check the currency yourself.",
             "SAL_CURRENCY_UNKNOWN",
         )
     if facts.period not in ("year", "month"):

@@ -11,18 +11,19 @@
 | Eligibility & policy (Phase 2) | `uv run pytest tests/test_eligibility_policy.py` | 70 | Salary boundaries (₹8 exactly, ₹8.01, ₹6–12, max-only, monthly), undisclosed/unverified, missing or ambiguous currency, INR/USD/PLN conversion, missing/stale/invalid rates, stipend separation, per-rule verdicts with quoted evidence, missing and conflicting information, threshold validation/persistence/restart/per-user, daily limit 1/10/9,999/10,000 and 10,001 rejected, token bypass, clamping, historical decisions and re-evaluation |
 | Phase 2 review fixes | `uv run pytest tests/test_phase2_fixes.py` | 41 | **Simultaneous PostgreSQL submission starts never exceed the limit** (plus a control that fails without the lock), same-application double start, tolerant `GET /settings` with normalisation report, city aliases × work arrangements, whole-word city matching, skills review vs explicit-mandatory rejection, review when a preferred fact is missing |
 | Job sources (Phase 3 M1) | `uv run pytest tests/test_job_sources.py` | 45 | Sanitized Greenhouse/Lever/Ashby contract fixtures (`tests/board_fixtures/`), malformed responses, retries (5xx, timeouts, 429 + Retry-After, cap, budget, no retry on 4xx), URL validation, empty/suspicious/partial/unidentified responses never closing jobs, adapter crashes, duplicate ids, saved decisions kept and marked outdated |
+| Salary extraction (Phase 3 M2) | `uv run pytest tests/test_salary_extraction.py` | 83 | 57 labelled snippets (`tests/data/salary_labelled.json`, incl. 18 written after the parser and measured untuned), never-assumed period/currency, structured-vs-description conflicts (13 cases), provenance labels, stipend rules unchanged, Lever interval, engine-version outdating |
 | Backend workflows | `uv run pytest tests/test_workflows.py` | 17 | Resume → profile, discovery, tailoring, application lifecycle, daily limit, MCP can't bypass approval, automations, assistant loop, AI budget, interviews, dashboard/analytics, **daily summary** |
 | AI features | `uv run pytest tests/test_ai_features.py` | 5 | Cover letters, drafted vs unknown answers, honest degradation on provider failure, interview plan + feedback, prompt-injection containment, budget for unpriced models |
 | Integration contracts | `uv run pytest tests/test_integration_contracts.py` | 12 | Exact requests/responses for Anthropic (official SDK via mock transport), OpenAI-compatible, Google OAuth/Gmail (exchange, refresh, list, draft, revocation, **full sync with classification + acknowledgement**), WhatsApp (request, errors, worker delivery states) |
 | Integration verifier | `uv run pytest tests/test_verify_integrations.py` | 5 | The live verifier itself: BLOCKED without credentials, PASS/FAIL logic for AI, Gmail and WhatsApp, side-effect gating |
 | Infrastructure | `uv run pytest tests/test_rate_limit.py tests/test_migrations.py tests/test_backup.py` | 10 | Redis limiter shared across instances, window expiry, fail-closed/fail-open, production requires Redis; migrations up → check → down → up; **backup → wipe → restore drill** with checksums and tamper detection |
 | MCP server | `cd mcp-server && uv run pytest` | 8 | Tool registry (no submit/send), token forwarding, error mapping, input validation, loopback-only HTTP, no token leakage |
-| Frontend unit | `cd frontend && npm test` | 25 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store, **command-menu shortcut (⌘K and Ctrl+K)** |
+| Frontend unit | `cd frontend && npm test` | 27 | Formatting, diff, API client (CSRF, errors), components, **CSP builder**, toast store, **command-menu shortcut (⌘K and Ctrl+K)** |
 | E2E | `cd frontend && npx playwright test` | 19 | Full journey on a real public job board, **resume review: edit, move, reload, re-extract**, **command menu via the platform shortcut and Ctrl+K**, axe on every page, **CSP header per request + zero CSP violations** |
 
-Backend total: **296** (all pass on PostgreSQL 17 + Redis 7, coverage 88%); on SQLite without Redis, 290 pass and
-6 skip (2 Redis-only, 4 PostgreSQL-only concurrency tests). Grand total **348** automated tests (296 backend,
-8 MCP, 25 frontend, 19 E2E).
+Backend total: **379** (all pass on PostgreSQL 17 + Redis 7, coverage 88%); on SQLite without Redis, 373 pass and
+6 skip (2 Redis-only, 4 PostgreSQL-only concurrency tests). Grand total **433** automated tests (379 backend,
+8 MCP, 27 frontend, 19 E2E).
 
 ### Running against real PostgreSQL and Redis
 ```bash

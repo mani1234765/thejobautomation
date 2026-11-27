@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatExperience, formatSalary, percent, relativeTime, scoreTone } from "./format";
+import { formatExperience, formatSalary, percent, relativeTime, salarySource, scoreTone } from "./format";
 import { wordDiff } from "./diff";
 
 describe("formatSalary", () => {
@@ -12,6 +12,19 @@ describe("formatSalary", () => {
   it("formats foreign currency per period", () => {
     expect(formatSalary({ salary_min: 150_000, salary_max: 190_000, salary_currency: "USD", salary_period: "year" })).toBe("$150k–$190k/yr");
     expect(formatSalary({ salary_min: 20_000, salary_max: 20_000, salary_currency: "INR", salary_period: "month" })).toBe("₹20k/mo");
+  });
+  it("never assumes a currency or a pay period", () => {
+    expect(formatSalary({ salary_min: 900_000, salary_max: 1_200_000, salary_currency: null, salary_period: "year" }))
+      .toBe("900k–1200k/yr · Currency not stated");
+    expect(formatSalary({ salary_min: 150_000, salary_max: 190_000, salary_currency: "$", salary_period: null }))
+      .toBe("$150k–$190k · Currency unclear ($) · Period not stated");
+    expect(formatSalary({ salary_min: 2_500_000, salary_max: 3_500_000, salary_currency: "INR", salary_period: null }))
+      .toBe("₹25L–₹35L · Period not stated");
+  });
+  it("labels where the salary came from", () => {
+    expect(salarySource({ salary_min: 1, salary_max: 2, salary_disclosure: "verified" })).toBe("Employer-provided salary");
+    expect(salarySource({ salary_min: 1, salary_max: 2, salary_disclosure: "advertised" })).toBe("Salary mentioned in the description");
+    expect(salarySource({ salary_min: null, salary_max: null, salary_disclosure: "undisclosed" })).toBeNull();
   });
 });
 

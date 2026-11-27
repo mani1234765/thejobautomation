@@ -1,0 +1,510 @@
+{
+ "_about": "Labelled salary snippets (synthetic, written for JobPilot). expected = null means no salary should be extracted. currency null = missing or ambiguous (e.g. a bare $). period null = not stated. Amounts are in the stated currency per stated period. Cases prefixed 'heldout-' were written after the parser and first measured without tuning (11/13 correct); they were then fixed and kept as regression cases. 'live-shape-*' cases mirror the shape of public listings found during M2 spot checks (amounts synthetic).",
+ "cases": [
+  {
+   "id": "lpa-range",
+   "text": "Compensation: ₹18 - 26 LPA",
+   "expected": {
+    "min": 1800000,
+    "max": 2600000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lpa-range-to",
+   "text": "CTC 12 to 15 LPA plus bonus",
+   "expected": {
+    "min": 1200000,
+    "max": 1500000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lpa-single",
+   "text": "CTC: 8 LPA",
+   "expected": {
+    "min": 800000,
+    "max": 800000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lpa-decimal",
+   "text": "Fixed pay of 8.5 LPA",
+   "expected": {
+    "min": 850000,
+    "max": 850000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lakhs-per-annum",
+   "text": "Salary: 10 lakhs per annum",
+   "expected": {
+    "min": 1000000,
+    "max": 1000000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lakh-range-pa",
+   "text": "Rs. 6-9 lakh p.a.",
+   "expected": {
+    "min": 600000,
+    "max": 900000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "lakh-no-period",
+   "text": "Salary: 10 lakh",
+   "expected": {
+    "min": 1000000,
+    "max": 1000000,
+    "currency": "INR",
+    "period": null
+   }
+  },
+  {
+   "id": "crore",
+   "text": "Total compensation up to ₹1.2 crore per annum",
+   "expected": {
+    "min": 12000000,
+    "max": 12000000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "indian-grouping-single",
+   "text": "CTC: ₹8,00,000 per annum",
+   "expected": {
+    "min": 800000,
+    "max": 800000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "indian-grouping-range",
+   "text": "INR 12,00,000 - 18,00,000 per annum",
+   "expected": {
+    "min": 1200000,
+    "max": 1800000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "inr-monthly-range",
+   "text": "Salary ₹70,000 - ₹90,000 per month",
+   "expected": {
+    "min": 70000,
+    "max": 90000,
+    "currency": "INR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "inr-monthly-single",
+   "text": "Monthly salary ₹1,20,000.",
+   "expected": {
+    "min": 120000,
+    "max": 120000,
+    "currency": "INR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "stipend-month",
+   "text": "Stipend: ₹40,000 per month",
+   "expected": {
+    "min": 40000,
+    "max": 40000,
+    "currency": "INR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "stipend-pm",
+   "text": "Stipend Rs 25,000 p.m.",
+   "expected": {
+    "min": 25000,
+    "max": 25000,
+    "currency": "INR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "k-month-context",
+   "text": "Stipend of 30k/month",
+   "expected": {
+    "min": 30000,
+    "max": 30000,
+    "currency": null,
+    "period": "month"
+   }
+  },
+  {
+   "id": "inr-no-period",
+   "text": "Salary: ₹50,000 - ₹60,000",
+   "expected": {
+    "min": 50000,
+    "max": 60000,
+    "currency": "INR",
+    "period": null
+   }
+  },
+  {
+   "id": "usd-explicit-year",
+   "text": "The base salary range is US$150,000 - US$190,000 per year",
+   "expected": {
+    "min": 150000,
+    "max": 190000,
+    "currency": "USD",
+    "period": "year"
+   }
+  },
+  {
+   "id": "usd-code-k",
+   "text": "USD 120k - 150k annually",
+   "expected": {
+    "min": 120000,
+    "max": 150000,
+    "currency": "USD",
+    "period": "year"
+   }
+  },
+  {
+   "id": "dollar-ambiguous-year",
+   "text": "$150,000 - $190,000 per year",
+   "expected": {
+    "min": 150000,
+    "max": 190000,
+    "currency": null,
+    "period": "year"
+   }
+  },
+  {
+   "id": "dollar-k-no-period",
+   "text": "$211.4K - $290.6K",
+   "expected": {
+    "min": 211400,
+    "max": 290600,
+    "currency": null,
+    "period": null
+   }
+  },
+  {
+   "id": "dollar-hourly",
+   "text": "Rate: $60 - $80 per hour",
+   "expected": {
+    "min": 60,
+    "max": 80,
+    "currency": null,
+    "period": "hour"
+   }
+  },
+  {
+   "id": "usd-hourly-hr",
+   "text": "USD 45/hr",
+   "expected": {
+    "min": 45,
+    "max": 45,
+    "currency": "USD",
+    "period": "hour"
+   }
+  },
+  {
+   "id": "eur-year",
+   "text": "€60,000 - €70,000 per year",
+   "expected": {
+    "min": 60000,
+    "max": 70000,
+    "currency": "EUR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "gbp-annum",
+   "text": "£55,000 per annum",
+   "expected": {
+    "min": 55000,
+    "max": 55000,
+    "currency": "GBP",
+    "period": "year"
+   }
+  },
+  {
+   "id": "pln-zl",
+   "text": "Poland base salary range: zł 248,000 - zł 372,000",
+   "expected": {
+    "min": 248000,
+    "max": 372000,
+    "currency": "PLN",
+    "period": null
+   }
+  },
+  {
+   "id": "pln-code-annual",
+   "text": "PLN 20,000 - 26,000 monthly",
+   "expected": {
+    "min": 20000,
+    "max": 26000,
+    "currency": "PLN",
+    "period": "month"
+   }
+  },
+  {
+   "id": "cad",
+   "text": "C$90k-110k per year",
+   "expected": {
+    "min": 90000,
+    "max": 110000,
+    "currency": "CAD",
+    "period": "year"
+   }
+  },
+  {
+   "id": "ashby-l",
+   "text": "₹25L – ₹35L",
+   "expected": {
+    "min": 2500000,
+    "max": 3500000,
+    "currency": "INR",
+    "period": null
+   }
+  },
+  {
+   "id": "yearly-word",
+   "text": "Yearly salary: INR 9,50,000",
+   "expected": {
+    "min": 950000,
+    "max": 950000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "en-dash-range",
+   "text": "Pay range: £40,000–£50,000 a year",
+   "expected": {
+    "min": 40000,
+    "max": 50000,
+    "currency": "GBP",
+    "period": "year"
+   }
+  },
+  {
+   "id": "no-pay",
+   "text": "Competitive pay and great benefits.",
+   "expected": null
+  },
+  {
+   "id": "401k",
+   "text": "We offer a 401(k) with matching and health insurance.",
+   "expected": null
+  },
+  {
+   "id": "funding",
+   "text": "We raised $50M in Series B funding last year.",
+   "expected": null
+  },
+  {
+   "id": "users",
+   "text": "Our platform serves 100,000 users across 20 countries.",
+   "expected": null
+  },
+  {
+   "id": "years",
+   "text": "5+ years of experience required.",
+   "expected": null
+  },
+  {
+   "id": "revenue",
+   "text": "We crossed ₹500 crore in annual revenue.",
+   "expected": null
+  },
+  {
+   "id": "phone",
+   "text": "Call us at +91 98765 43210.",
+   "expected": null
+  },
+  {
+   "id": "bonus-small",
+   "text": "Referral bonus of $500 for every hire.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h1",
+   "text": "The salary for this role is INR 15 LPA - 22 LPA depending on experience.",
+   "expected": {
+    "min": 1500000,
+    "max": 2200000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "heldout-h2",
+   "text": "Package: Rs 4.5 lakhs per annum (fixed) + incentives",
+   "expected": {
+    "min": 450000,
+    "max": 450000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "heldout-h3",
+   "text": "Expected stipend: INR 15,000/month during training",
+   "expected": {
+    "min": 15000,
+    "max": 15000,
+    "currency": "INR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "heldout-h4",
+   "text": "Hourly rate: $25–$35/hr, contract",
+   "expected": {
+    "min": 25,
+    "max": 35,
+    "currency": null,
+    "period": "hour"
+   }
+  },
+  {
+   "id": "heldout-h5",
+   "text": "Compensation £70k–£85k + equity",
+   "expected": {
+    "min": 70000,
+    "max": 85000,
+    "currency": "GBP",
+    "period": null
+   }
+  },
+  {
+   "id": "heldout-h6",
+   "text": "We pay €4,500 per month gross.",
+   "expected": {
+    "min": 4500,
+    "max": 4500,
+    "currency": "EUR",
+    "period": "month"
+   }
+  },
+  {
+   "id": "heldout-h7",
+   "text": "Base pay: 9,00,000 - 12,00,000 INR per year",
+   "expected": {
+    "min": 900000,
+    "max": 1200000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "heldout-h8",
+   "text": "This role pays between USD 95,000 and USD 120,000 annually.",
+   "expected": {
+    "min": 95000,
+    "max": 120000,
+    "currency": "USD",
+    "period": "year"
+   }
+  },
+  {
+   "id": "heldout-h9",
+   "text": "CTC up to ₹30 lacs",
+   "expected": {
+    "min": 3000000,
+    "max": 3000000,
+    "currency": "INR",
+    "period": null
+   }
+  },
+  {
+   "id": "heldout-h10",
+   "text": "Salary range: 18k - 22k PLN monthly",
+   "expected": {
+    "min": 18000,
+    "max": 22000,
+    "currency": "PLN",
+    "period": "month"
+   }
+  },
+  {
+   "id": "heldout-h11",
+   "text": "S$7,000 to S$9,000 a month",
+   "expected": {
+    "min": 7000,
+    "max": 9000,
+    "currency": "SGD",
+    "period": "month"
+   }
+  },
+  {
+   "id": "heldout-h12",
+   "text": "Annual CTC: ₹ 14,50,000",
+   "expected": {
+    "min": 1450000,
+    "max": 1450000,
+    "currency": "INR",
+    "period": "year"
+   }
+  },
+  {
+   "id": "heldout-h13",
+   "text": "Join a team of 250 engineers in 12 offices.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h14",
+   "text": "Free meals worth ₹3,000 every month.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h15",
+   "text": "We have processed $2 billion in payments.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h16",
+   "text": "Laptop allowance of $1,500.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h17",
+   "text": "Offices in 40+ countries, founded in 2012.",
+   "expected": null
+  },
+  {
+   "id": "heldout-h18",
+   "text": "Pay: 60,000-75,000 per year (currency per local market)",
+   "expected": {
+    "min": 60000,
+    "max": 75000,
+    "currency": null,
+    "period": "year"
+   }
+  },
+  {
+   "id": "live-shape-trailing-code",
+   "text": "United States Salary Range\n$104,800—$176,400 USD\n",
+   "expected": {
+    "min": 104800,
+    "max": 176400,
+    "currency": "USD",
+    "period": null
+   }
+  }
+ ]
+}

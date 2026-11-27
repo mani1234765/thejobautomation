@@ -35,7 +35,7 @@ from app.domain.job_parsing import normalize_title
 from app.domain.locations import mentions_city
 from app.domain.salary_policy import SalaryFacts, SalaryPolicy
 
-SCORING_VERSION = "2026.11.3"  # .3: explainable eligibility verdicts, strict salary threshold
+SCORING_VERSION = "2026.11.4"  # .4: salary extraction (periods never assumed) and structured-vs-description conflicts
 NEUTRAL = 50.0
 WEIGHTS = {"skills": 45, "experience": 20, "role": 15, "location": 10, "level": 5, "employment": 5}
 

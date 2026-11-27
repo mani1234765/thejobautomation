@@ -6,7 +6,7 @@ and the information that was missing.
 
 | Rule       | Rejects when …                                                     | Needs review when …                                                 |
 |------------|--------------------------------------------------------------------|---------------------------------------------------------------------|
-| SALARY     | verified minimum annual CTC is not strictly above your threshold    | pay is advertised-only, currency unknown/ambiguous, no fresh FX rate |
+| SALARY     | verified minimum annual CTC is not strictly above your threshold    | advertised-only pay; unknown currency or period; no fresh FX rate; employer pay field conflicts with the description |
 | STIPEND    | verified stipend is below your minimum (internships only)            | advertised-only, currency unknown, no fresh FX rate                  |
 | SKILLS     | the listing calls ≥2 skills mandatory ("must have" …) and you have none | no overlap with the extracted skills, under half covered, or some mandatory skills missing |
 | EXPERIENCE | you are more than 2 years short of the stated minimum                | 1–2 years short, or the listing states conflicting requirements      |
@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Literal
 from app.domain import fx
 from app.domain import job_parsing as jp
 from app.domain.locations import mentions_city
-from app.domain.salary_policy import SalaryPolicy, evaluate
+from app.domain.salary_policy import SalaryFacts, SalaryPolicy, evaluate
 
 if TYPE_CHECKING:
     from app.domain.matching import CandidateProfile, JobFacts
@@ -40,7 +40,8 @@ LEGACY_STATUS = {"ELIGIBLE": "eligible", "REJECTED": "ineligible", "MANUAL_REVIE
 
 RULES = {
     "SALARY": "Verified minimum annual CTC must be strictly greater than your threshold; undisclosed pay is "
-    "eligible; advertised-only pay, unknown or ambiguous currency, or no fresh exchange rate → manual review.",
+    "eligible; advertised-only pay, unknown or ambiguous currency or period, no fresh exchange rate, or a "
+    "conflict between the employer's pay field and the description → manual review.",
     "STIPEND": "Internship stipends are judged separately against your minimum monthly stipend.",
     "SKILLS": "Rejected only if the listing explicitly calls 2+ skills mandatory and you have none of them; "
     "review if no extracted skill matches, you cover under half, or a mandatory skill is missing.",
@@ -87,18 +88,71 @@ def quote(text: str, pattern: str, limit: int = 180) -> str | None:
 
 
 # ── Checks ─────────────────────────────────────────────────────────────────────────────────────
+PERIOD_LABEL = {"year": "per year", "month": "per month", "hour": "per hour"}
+
+
+def describe_pay(s: SalaryFacts) -> str:
+    """Employer-provided pay, stating plainly what is and isn't known."""
+    values = [v for v in (s.minimum, s.maximum) if v is not None]
+    rng = f"{values[0]:,.0f}" if len(set(values)) == 1 else "–".join(f"{v:,.0f}" for v in values)
+    cur = fx.identify(s.currency)
+    cur_txt = cur or (f"Currency ambiguous ({s.currency})" if s.currency else "Currency not stated")
+    return f"Employer-provided salary · {rng} · {cur_txt} · {PERIOD_LABEL.get(s.period or '', 'Period not stated')}"
+
+
+def _annual(amount: float, period: str | None) -> float:
+    return amount * 12 if period == "month" else amount
+
+
+def salary_conflict(s: SalaryFacts, description: str) -> tuple[str, str] | None:
+    """(employer field, description wording) when the employer's structured pay and the pay stated in the
+    description can't both be right. Only figures in the same identified currency with known yearly or
+    monthly periods are compared, with a 10% tolerance for rounding. Listings often give several ranges
+    (levels, locations), so one consistent figure is enough to rule out a conflict."""
+    if s.disclosure != "verified" or (s.minimum is None and s.maximum is None):
+        return None
+    cur = fx.identify(s.currency)
+    if cur is None or s.period not in ("year", "month"):
+        return None
+    lo = _annual(s.minimum if s.minimum is not None else s.maximum, s.period)  # type: ignore[arg-type]
+    hi = _annual(s.maximum if s.maximum is not None else s.minimum, s.period)  # type: ignore[arg-type]
+    comparable = [
+        t
+        for t in jp.find_salaries(description)
+        if fx.identify(t.currency) == cur and t.period in ("year", "month") and t.minimum is not None
+    ]
+    if not comparable:
+        return None
+    for t in comparable:
+        t_lo = _annual(t.minimum, t.period)  # type: ignore[arg-type]
+        t_hi = _annual(t.maximum if t.maximum is not None else t.minimum, t.period)  # type: ignore[arg-type]
+        if not (t_hi < lo * 0.9 or t_lo > hi * 1.1):
+            return None
+    t = comparable[0]
+    return describe_pay(s), quote(description, re.escape(t.text or "")) or f"“{t.text}”"
+
+
 def _salary(job: JobFacts, policy: SalaryPolicy, fxc: fx.FxContext | None) -> Check:
     d = evaluate(job.salary, policy, fxc)
     outcome: Outcome = {"eligible": "pass", "ineligible": "reject", "manual_review": "review"}[d.decision]
     s = job.salary
-    evidence: list[str] = []
-    if s.text:
-        evidence.append(f"“{s.text}”")
-    elif s.minimum is not None or s.maximum is not None:
-        rng = "–".join(f"{v:,.0f}" for v in (s.minimum, s.maximum) if v is not None)
-        evidence.append(
-            f"Structured pay from the job board: {rng} {s.currency or '(no currency)'} per {s.period or '?'}"
+    conflict = salary_conflict(s, job.description)
+    if conflict:
+        return Check(
+            d.rule,
+            "review",
+            "SAL_CONFLICT",
+            "The employer's salary field and the description state different pay. Check which is right "
+            "before applying.",
+            list(conflict),
         )
+    evidence: list[str] = []
+    if s.disclosure == "verified" and (s.minimum is not None or s.maximum is not None):
+        evidence.append(describe_pay(s))
+        if s.text:
+            evidence.append(f"“{s.text}”")
+    elif s.text:
+        evidence.append(f"“{s.text}”")
     if d.normalized.get("conversion"):
         evidence.append(str(d.normalized["conversion"]))
     missing = []

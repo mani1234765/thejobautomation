@@ -309,10 +309,11 @@ def policy_snapshot(user: User, fxc: fx.FxContext | None = None) -> dict[str, An
 
 
 def _policy_key(snap: dict[str, Any] | None) -> str | None:
-    """Identity of the rules (not the exchange-rate snapshot, which changes daily)."""
+    """Identity of the user's policy settings. The exchange-rate snapshot (changes daily) and the engine
+    version (tracked separately as the "engine" input) are excluded."""
     if not snap:
         return None
-    core = {k: v for k, v in snap.items() if k != "fx"}
+    core = {k: v for k, v in snap.items() if k not in ("fx", "engine")}
     return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
 
 
