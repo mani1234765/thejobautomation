@@ -97,6 +97,8 @@ def update_settings(body: SettingsIn, db: DB, p: Principal = Depends(web_only)) 
     s = p.user.settings
     before = {k: getattr(s, k) for k in SettingsIn.model_fields}
     for k, v in body.model_dump().items():
+        if k.startswith("apprentice_") and k not in body.model_fields_set:
+            continue  # added in M3: older clients that don't send them must not reset them to defaults
         setattr(s, k, v)
     changed = {k: [before[k], getattr(s, k)] for k in before if before[k] != getattr(s, k)}
     audit.record(db, user_id=p.id, actor="user", action="settings.updated", meta={"changed": changed})

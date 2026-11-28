@@ -13,7 +13,7 @@ import { ChipGroup, TagInput } from "@/components/ui/controls";
 import { Badge, Field, Input, Skeleton, Textarea } from "@/components/ui/primitives";
 import { Callout } from "@/components/ui/states";
 import { api, ApiError } from "@/lib/api";
-import { cn, EXPERIENCE_LEVELS, formatDate } from "@/lib/format";
+import { cn, EMPLOYMENT_OPTIONS, EXPERIENCE_LEVELS, formatDate } from "@/lib/format";
 import { keys, useMe, useProfile } from "@/lib/queries";
 import type { Profile, ResumeDetail } from "@/lib/types";
 
@@ -180,7 +180,7 @@ export default function Onboarding() {
                 </Field>
                 <Field label="Employment types">
                   <ChipGroup ariaLabel="Employment types" value={draft.employment_types} onChange={(v) => set("employment_types", v)}
-                    options={[{ value: "full_time", label: "Full-time" }, { value: "internship", label: "Internship" }, { value: "contract", label: "Contract" }, { value: "part_time", label: "Part-time" }]} />
+                    options={EMPLOYMENT_OPTIONS} />
                 </Field>
                 <Field label="Expected CTC (₹ LPA)" htmlFor="ctc" optional hint="Used only to answer application questions — your eligibility threshold lives in Settings.">
                   <Input id="ctc" type="number" min={0} className="max-w-40" value={draft.salary_expectation_lpa ?? ""}

@@ -301,6 +301,9 @@ def test_missing_employment_type_needs_review_only_when_restricted():
     assert check(e, "EMPLOYMENT")["outcome"] == "review" and e["verdict"] == "MANUAL_REVIEW"
     e = verdict(facts(employment_type=None), cand(employment_types=[]))
     assert check(e, "EMPLOYMENT")["outcome"] == "unknown"
-    every = ["full_time", "part_time", "contract", "internship"]
+    every = ["full_time", "part_time", "contract", "internship", "freelance", "temporary", "apprenticeship"]
     e = verdict(facts(employment_type=None), cand(employment_types=every))
     assert check(e, "EMPLOYMENT")["outcome"] == "unknown"
+    # M3: the four original types are a restriction now that there are seven, so a missing type is a review.
+    e = verdict(facts(employment_type=None), cand(employment_types=every[:4]))
+    assert check(e, "EMPLOYMENT")["outcome"] == "review"

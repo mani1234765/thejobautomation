@@ -60,30 +60,6 @@ def fingerprint(company: str, title: str, location: str | None) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-_EXP_RANGE = re.compile(r"(\d{1,2})(?:\.\d)?\s*(?:-|–|to)\s*(\d{1,2})\s*\+?\s*(?:years|yrs|year)", re.I)
-_EXP_MIN = re.compile(
-    r"(?:at least|minimum(?: of)?|min\.?)?\s*(\d{1,2})\s*\+?\s*(?:\+|plus)?\s*(?:years|yrs|year)(?:'s)?\s*(?:of\s+)?"
-    r"(?:professional\s+|relevant\s+|industry\s+|hands-on\s+|work\s+)*(?:experience|exp)",
-    re.I,
-)
-
-
-def experience_range(text: str) -> tuple[float | None, float | None]:
-    m = _EXP_RANGE.search(text)
-    if m:
-        lo, hi = float(m.group(1)), float(m.group(2))
-        if lo <= hi <= 30:
-            return lo, hi
-    mins = [float(x) for x in _EXP_MIN.findall(text) if float(x) <= 30]
-    if mins:
-        return min(mins), None
-    if re.search(
-        r"\b(fresher|freshers|new grad|new graduate|entry[- ]level|recent graduate|graduate program)\b", text, re.I
-    ):
-        return 0.0, 1.0
-    return None, None
-
-
 def seniority(title: str, exp_min: float | None) -> str | None:
     t = title.lower()
     if re.search(r"\bintern(ship)?\b", t):
@@ -97,33 +73,6 @@ def seniority(title: str, exp_min: float | None) -> str | None:
     if exp_min is not None:
         return "junior" if exp_min < 2 else "mid" if exp_min < 5 else "senior"
     return None
-
-
-def work_mode(*hints: str | None) -> str | None:
-    blob = " ".join(h for h in hints if h).lower()
-    if not blob:
-        return None
-    if "hybrid" in blob:
-        return "hybrid"
-    if re.search(r"\bremote\b", blob):
-        return "remote"
-    if re.search(r"\b(on-?site|in[- ]office|in office)\b", blob):
-        return "onsite"
-    return None
-
-
-def employment_type(title: str, hint: str | None) -> tuple[str | None, bool]:
-    h = (hint or "").lower().replace("-", "").replace(" ", "")
-    t = title.lower()
-    if "intern" in h or re.search(r"\bintern(ship)?\b", t):
-        return "internship", True
-    if "contract" in h or "temporary" in h or re.search(r"\bcontract(or)?\b", t):
-        return "contract", False
-    if "parttime" in h:
-        return "part_time", False
-    if "fulltime" in h or "permanent" in h or "regular" in h:
-        return "full_time", False
-    return None, False
 
 
 @dataclass
@@ -276,35 +225,714 @@ def parse_salary_text(text: str) -> SalaryParse:
     return found[0] if found else SalaryParse()
 
 
-_PREFERRED_HDR = re.compile(r"(nice to have|preferred|bonus|plus if|good to have|desirable|pluses)", re.I)
-_REQUIRED_HDR = re.compile(
-    r"(requirements|qualifications|what you.?ll need|must have|you have|what we.?re looking for|"
-    r"who you are|minimum qualifications|skills)",
+# ── Sections and sentences ─────────────────────────────────────────────────────────────────────
+# A listing is split into sections by its headings. A section is MANDATORY (requirements), PREFERRED (nice to
+# have), IGNORED (about the company, benefits, equal-opportunity and application boilerplate) or MENTIONED
+# (responsibilities, overview, and any text before the first heading). Every extractor below reads the same
+# segments, so boilerplate is ignored consistently. Wording inside a sentence ("X is required", "Y is a plus")
+# overrides the section it sits in.
+MANDATORY, PREFERRED, MENTIONED, IGNORED = "mandatory", "preferred", "mentioned", "ignored"
+_TIER_RANK = {MANDATORY: 3, PREFERRED: 2, MENTIONED: 1}
+
+_LEAD = r"[^\w]*(?:(?:the|your|our|some|key|core|basic|minimum|main|additional|other|job|role|technical)\s+)*"
+_HEADINGS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (tier, re.compile(_LEAD + f"(?:{pat})", re.I))
+    for tier, pat in (
+        (MANDATORY, r"about you\b"),
+        (MENTIONED, r"about (?:the |this )?(?:role|job|position|opportunity|team)\b"),
+        (
+            PREFERRED,
+            r"(?:nice|good|great)[- ]to[- ]haves?\b|preferred\b|desired\b|desirable\b|bonus\b|pluses\b|extra credit\b|"
+            r"it'?s a plus\b|(?:even )?better if\b|ideally\b|we'?d love\b",
+        ),
+        (
+            IGNORED,
+            r"about\b|who we are\b|story\b|mission\b|values\b|culture\b|company\b|why (?:join|work|you'?ll love)\b|"
+            r"life at\b|benefits\b|perks\b|what we offer\b|what'?s in it for you\b|compensation\b|salary\b|"
+            r"pay (?:range|transparency)\b|total rewards\b|equal (?:employment )?opportunit|eeo\b|diversity\b|"
+            r"inclusion\b|accommodations?\b|how to apply\b|(?:application|hiring|interview|recruitment) process\b|"
+            r"privacy\b|disclaimer\b|commitment\b|additional information\b",
+        ),
+        (
+            MANDATORY,
+            r"requirements?\b|required\b|qualifications\b|what (?:you|we)(?:'ll| will)? (?:need|bring|have|require|expect)\b|"
+            r"what we(?:'re| are) looking for\b|who you are\b|you (?:have|bring|are|will have|should have|must have|'ll need|need)\b|"
+            r"must[- ]haves?\b|skills\b|experience\b|eligibility\b|(?:the )?ideal candidate\b|candidate profile\b|"
+            r"profile\b|background\b",
+        ),
+        (
+            MENTIONED,
+            r"responsibilities\b|what you(?:'ll| will)? (?:do|be doing|work on)\b|role\b|overview\b|job description\b|"
+            r"description\b|impact\b|day[- ]to[- ]day\b|in this role\b|tech(?:nology)? stack\b|location\b|team\b",
+        ),
+    )
+)
+_BOILERPLATE = re.compile(
+    r"equal (?:employment )?opportunity|without regard to|regardless of (?:race|gender|age|religion)|"
+    r"do(?:es)? not discriminate|reasonable accommodations?|e-verify|privacy (?:policy|notice)|"
+    r"protected (?:veteran|characteristic|class)",
+    re.I,
+)
+_BULLET = re.compile(r"^\s*(?:[•\-*–·▪◦]|\d{1,2}[.)])\s+")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(“\"•])|;\s*")
+
+
+@dataclass
+class Segment:
+    text: str  # one sentence (or bullet) of the listing
+    section: str  # MANDATORY | PREFERRED | MENTIONED | IGNORED
+    heading: str | None = None
+
+
+def _heading(line: str) -> tuple[str, str, str] | None:
+    """(tier, heading, remaining text) when a line is a section heading ("Requirements", "Nice to have:",
+    "Must have: Figma")."""
+    for tier, pattern in _HEADINGS:
+        m = pattern.match(line)
+        if not m:
+            continue
+        rest = line[m.end() :]
+        inline = re.match(r"\s*[^\w\s(]*?\s*[:\-–—]\s*", rest)
+        if inline and rest.strip()[:1] in ":-–—":
+            return tier, line[: m.end()].strip(" :-–—"), rest[inline.end() :]
+        words = re.findall(r"[\w']+", rest)
+        if len(words) <= 3 and len(line) <= 70 and not line.rstrip().endswith("."):
+            return tier, line.strip(" :-–—?"), ""
+        return None
+    return None
+
+
+def segments(text: str) -> list[Segment]:
+    """The listing as sentences, each tagged with the section it belongs to."""
+    out: list[Segment] = []
+    tier, heading, bullets_seen = MENTIONED, None, False
+    for raw in (text or "").replace("’", "'").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        is_bullet = bool(_BULLET.match(line))
+        body = _BULLET.sub("", line, count=1)
+        if not is_bullet and (h := _heading(body)):
+            tier, heading, body = h[0], h[1], h[2]
+            bullets_seen = False
+            if not body.strip():
+                continue
+        elif (
+            tier in (MANDATORY, PREFERRED)
+            and bullets_seen
+            and not is_bullet
+            and len(body) > 100
+            and not _cue_matches(body)
+        ):
+            # A plain paragraph after a list usually closes it ("We're a remote-first team founded in …").
+            tier, heading = MENTIONED, None
+        bullets_seen = bullets_seen or is_bullet
+        start = 0
+        for m in [*_SENTENCE_END.finditer(body), None]:
+            end = m.start() if m else len(body)
+            sentence = body[start:end].strip()
+            if m:
+                start = m.end()
+            if not sentence:
+                continue
+            section = IGNORED if _BOILERPLATE.search(sentence) else tier
+            out.append(Segment(sentence, section, heading))
+    return out
+
+
+def _quote(sentence: str, limit: int = 180) -> str:
+    s = re.sub(r"\s+", " ", sentence).strip(" .•-")
+    return f"“{s if len(s) <= limit else s[: limit - 1].rstrip() + '…'}”"
+
+
+# Sentence-level wording. Forward cues apply to what follows ("Must have: X"), backward cues to what precedes
+# ("X is required"). A negated requirement ("X is not required") makes X merely mentioned.
+_CUES: tuple[tuple[str, str, re.Pattern[str]], ...] = tuple(
+    (tier, direction, re.compile(pat, re.I))
+    for tier, direction, pat in (
+        (
+            MANDATORY,
+            "fwd",
+            r"\bmust[- ]haves?\b|\bmust (?:have|know|be (?:proficient|experienced|skilled|familiar|fluent)(?: in| with)?)\b|"
+            r"\bneed to (?:have|know)\b|\brequired(?: skills?| experience| qualifications)?\s*[:\-–]|"
+            r"\brequirements?\s*[:\-–]|\bmandatory\s*[:\-–]|\bessential\s*[:\-–]",
+        ),
+        (
+            MANDATORY,
+            "bwd",
+            r"\b(?:is|are) (?:a )?(?:required|mandatory|essential|must)\b|\brequired\b(?! to\b)|\bmandatory\b|"
+            r"\bessential\b|\ba must\b",
+        ),
+        (
+            PREFERRED,
+            "fwd",
+            r"\b(?:nice|good|great)[- ]to[- ]haves?\s*[:\-–]|\bbonus(?: points)?(?: for| if)?\s*[:\-–]|"
+            r"\bbonus points (?:for|if)\b|\bpreferred\s*[:\-–]|\bideally\b|\bpreferably\b|"
+            r"\bit(?:'s| is| would be) (?:a plus|nice|great|helpful) (?:if|to)\b|\bplus\s*[:\-–]|\bdesirable\s*[:\-–]",
+        ),
+        (
+            PREFERRED,
+            "bwd",
+            r"\b(?:a|big|huge|definite|strong|nice) plus\b|\bpluses\b|\bpreferred\b|\bpreferable\b|\bdesirable\b|"
+            r"\bdesired\b|\b(?:nice|good|great)[- ]to[- ]have\b|\badvantage(?:ous)?\b|\bbonus\b|\bhelpful\b|\bwelcome\b",
+        ),
+    )
+)
+_NEGATED = re.compile(r"\b(?:not|no|isn't|aren't|never|nor)\b[\w\s']{0,12}$", re.I)
+
+
+@dataclass
+class _Cue:
+    tier: str
+    direction: str
+    start: int
+    end: int
+
+
+def _cue_matches(sentence: str) -> list[_Cue]:
+    cues: list[_Cue] = []
+    for tier, direction, pattern in _CUES:
+        for m in pattern.finditer(sentence):
+            if any(c.start <= m.start() < c.end or m.start() <= c.start < m.end() for c in cues):
+                continue  # a forward cue ("Nice to have:") already covers this wording
+            t = tier
+            if tier == MANDATORY and _NEGATED.search(sentence[: m.start()]):
+                t = MENTIONED
+            d = "fwd" if direction == "bwd" and m.start() <= 2 else direction  # "Preferred Go experience"
+            cues.append(_Cue(t, d, m.start(), m.end()))
+    return cues
+
+
+def _cue_tier(cues: list[_Cue], start: int, end: int) -> str | None:
+    """The tier the sentence's wording gives to the text at [start, end): the nearest applicable cue."""
+    fwd = [c for c in cues if c.direction == "fwd" and c.end <= start]
+    bwd = [c for c in cues if c.direction == "bwd" and c.start >= end]
+    best: tuple[int, str] | None = None
+    if fwd:
+        c = max(fwd, key=lambda c: c.end)
+        best = (start - c.end, c.tier)
+    if bwd:
+        c = min(bwd, key=lambda c: c.start)
+        if best is None or c.start - end < best[0]:
+            best = (c.start - end, c.tier)
+    return best[1] if best else None
+
+
+# ── Skills ─────────────────────────────────────────────────────────────────────────────────────
+@dataclass
+class SkillSplit:
+    required: list[str] = field(default_factory=list)  # mandatory
+    preferred: list[str] = field(default_factory=list)
+    mentioned: list[str] = field(default_factory=list)
+    # canonical name → {"tier", "term" (as written), "quote", "section"}
+    evidence: dict[str, dict[str, str | None]] = field(default_factory=dict)
+
+
+def split_skills(text: str, segs: list[Segment] | None = None) -> SkillSplit:
+    """Classify each skill as mandatory, preferred or merely mentioned, with the sentence that decided it.
+
+    Skills in requirement sections are mandatory; in nice-to-have sections preferred; elsewhere (responsibilities,
+    overview, a listing without headings) only mentioned. Sentence wording overrides the section. About-us,
+    benefits and equal-opportunity text is ignored. Soft skills are never mandatory (at most preferred)."""
+    best: dict[str, tuple[int, dict[str, str | None]]] = {}
+    for seg in segs if segs is not None else segments(text):
+        if seg.section == IGNORED:
+            continue
+        cues = _cue_matches(seg.text)
+        for hit in taxonomy.find_skills(seg.text, listing=True):
+            tier = _cue_tier(cues, hit.start, hit.end) or seg.section
+            if tier == MANDATORY and taxonomy.category_of(hit.name) == "soft":
+                tier = PREFERRED
+            rank = _TIER_RANK[tier]
+            if hit.name not in best or rank > best[hit.name][0]:
+                best[hit.name] = (
+                    rank,
+                    {"tier": tier, "term": hit.term, "quote": _quote(seg.text), "section": seg.heading},
+                )
+    out = SkillSplit()
+    for name, (_, ev) in best.items():
+        {MANDATORY: out.required, PREFERRED: out.preferred, MENTIONED: out.mentioned}[ev["tier"]].append(name)  # type: ignore[index]
+        out.evidence[name] = ev
+    return out
+
+
+# ── Compensation wording ──────────────────────────────────────────────────────────────────────
+_STIPEND_WORD = re.compile(r"\bstipends?\b", re.I)
+_SALARY_WORD = re.compile(r"\b(?:salary|salaries|ctc|cost to company|wages?)\b", re.I)
+
+
+def compensation_wording(text: str, pay_text: str | None = None) -> dict[str, str]:
+    """{"stipend" | "salary": quote} for each way the listing explicitly names its pay (boilerplate ignored).
+    Only words count; a monthly or annual amount alone says nothing about which it is."""
+    found: dict[str, str] = {}
+    sentences = [s.text for s in segments(text) if s.section != IGNORED]
+    for sentence in [*sentences, *([pay_text] if pay_text else [])]:
+        for kind, pattern in (("stipend", _STIPEND_WORD), ("salary", _SALARY_WORD)):
+            if kind not in found and pattern.search(sentence):
+                found[kind] = _quote(sentence)
+    return found
+
+
+# ── Employment type ────────────────────────────────────────────────────────────────────────────
+EMPLOYMENT_TYPES = ("full_time", "part_time", "contract", "internship", "freelance", "temporary", "apprenticeship")
+_HOURS_TYPES = {"full_time", "part_time"}  # describe hours; another type can be full- or part-time too
+_HINTS = {
+    "fulltime": "full_time",
+    "permanent": "full_time",
+    "regular": "full_time",
+    "parttime": "part_time",
+    "contract": "contract",
+    "contractor": "contract",
+    "contracttohire": "contract",
+    "fixedterm": "contract",
+    "intern": "internship",
+    "internship": "internship",
+    "freelance": "freelance",
+    "freelancer": "freelance",
+    "temporary": "temporary",
+    "temp": "temporary",
+    "seasonal": "temporary",
+    "apprentice": "apprenticeship",
+    "apprenticeship": "apprenticeship",
+}
+_TITLE_TYPES = (
+    ("internship", r"\bintern(?:ship)?s?\b"),
+    ("apprenticeship", r"\bapprentice(?:ship)?s?\b"),
+    ("freelance", r"\bfreelance(?:r)?\b"),
+    ("temporary", r"\btemp(?:orary)?\b|\bseasonal\b"),
+    ("contract", r"\bcontract(?:or)?\b|\bc2h\b|\bfixed[- ]term\b"),
+    ("part_time", r"\bpart[- ]?time\b"),
+    ("full_time", r"\bfull[- ]?time\b|\bpermanent\b"),
+)
+_TEXT_TYPES = tuple(
+    (t, re.compile(p, re.I))
+    for t, p in (
+        ("internship", r"\binternships?\b|\bintern\b"),
+        ("apprenticeship", r"\bapprentice(?:ship)?s?\b"),
+        (
+            "freelance",
+            # "freelance role", "as a freelancer"; not "manage agencies and freelancers"
+            r"\bfreelance (?:role|position|basis|engagement|project|contract|opportunity|job|assignment|gig|work)\b|"
+            r"\b(?:is|on|as) an? freelance\b|\b(?:as|is|for|hiring|seeking|looking for)\s+(?:an?\s+)?(?:[\w-]+\s+)?freelancers?\b",
+        ),
+        (
+            "temporary",
+            r"\btemporary (?:role|position|job|assignment|employment|basis|contract|hire|staff|worker)\b|"
+            r"\btemp (?:role|position|job|staff|worker)\b|\bseasonal (?:role|position|job|hire|staff|worker|employment)\b|"
+            r"\b(?:maternity|parental|paternity) (?:leave )?cover\b|\b(?:role|position|job) is temporary\b",
+        ),
+        (
+            "contract",
+            r"\bcontract[- ]to[- ](?:hire|perm(?:anent)?)\b|\bc2h\b|\b(?:as|is|for|hiring|seeking) an? (?:[\w-]+ )?contractor\b|"
+            r"\bcontractual (?:role|position|basis|employment|job)\b|\bfixed[- ]term\b|"
+            r"\b(?:on|for) a (?:\d+[- ](?:month|week|year)s? )?contract(?: basis)?\b|"
+            r"\bcontract (?:role|position|basis|opportunity|engagement|assignment|job|employment|hire)\b|"
+            r"\b\d+[- ](?:month|week|year)s? contract\b|\bcontract (?:duration|length|term|period)\b",
+        ),
+        ("part_time", r"\bpart[- ]?time\b"),
+        (
+            "full_time",
+            r"\bfull[- ]?time\b|\bpermanent (?:role|position|job|employment|contract|hire|opportunity)\b|"
+            r"\bpermanent,|\bregular (?:full[- ]time )?(?:employee|employment|role|position)\b",
+        ),
+    )
+)
+# Wording that names a type without describing this role ("conversion to full-time", "part-time MBA").
+_NOT_THIS_ROLE = re.compile(
+    r"(?:convert(?:ed|ing|s)?|conversion|transition(?:ing)?|lead(?:s|ing)?|path|move|possibility|potential|"
+    r"opportunity|option|chance|offer)\b[^.;\n]{0,25}?\b(?:full[- ]?time|permanent)\b(?: (?:role|position|employment|offer|job|hire))?|"
+    r"\bfull[- ]?time (?:equivalent|students?|degree|mba|program(?:me)?|course|stud(?:y|ies))\b|"
+    r"\bpart[- ]?time (?:mba|degree|students?|stud(?:y|ies)|course|program(?:me)?)\b",
+    re.I,
+)
+_TYPE_WORD = r"full[- ]?time|part[- ]?time|permanent|contract(?:or)?|freelance|temporary|internship"
+_ALTERNATIVES = re.compile(rf"\b({_TYPE_WORD})\s*(?:,\s*)?(?:or|/|and/or)\s*({_TYPE_WORD})\b", re.I)
+_TYPE_LABEL = re.compile(
+    r"\b(?:employment|job|position|contract|work|role|engagement) type\s*[:\-–]\s*([A-Za-z][\w -]{1,30})", re.I
+)
+
+
+@dataclass
+class EmploymentFacts:
+    value: str | None
+    is_internship: bool
+    evidence: str | None = None
+    note: str | None = None  # why it is unknown, when the listing contradicts itself
+
+
+def _hint_type(hint: str | None) -> str | None:
+    h = re.sub(r"[^a-z]", "", (hint or "").lower())
+    if h in _HINTS:
+        return _HINTS[h]
+    for key in ("intern", "apprentice", "freelance", "temporary", "contract", "parttime", "fulltime", "permanent"):
+        if key in h:
+            return _HINTS[key]
+    return None
+
+
+def detect_employment(
+    title: str, hint: str | None, text: str = "", segs: list[Segment] | None = None
+) -> EmploymentFacts:
+    """Employment type from, in order: the board's structured field, the title, an explicit "Employment type:"
+    line, then the description's wording. Contradictory wording ("full-time or part-time") stays unknown."""
+    if (h := _hint_type(hint)) is not None:
+        return EmploymentFacts(h, h == "internship", f"Board field: “{hint}”")
+    for t, p in _TITLE_TYPES:
+        if re.search(p, title, re.I):
+            return EmploymentFacts(t, t == "internship", f"Title: “{title}”")
+    found: dict[str, str] = {}  # type → quote
+    for seg in segs if segs is not None else segments(text):
+        if seg.section == IGNORED:
+            continue
+        if (m := _TYPE_LABEL.search(seg.text)) and (lt := _hint_type(m.group(1))):
+            return EmploymentFacts(lt, lt == "internship", _quote(seg.text))
+        sentence = _NOT_THIS_ROLE.sub(" ", seg.text)
+        alt = _ALTERNATIVES.search(sentence)
+        if alt and _hint_type(alt.group(1)) != _hint_type(alt.group(2)):
+            return EmploymentFacts(None, False, _quote(seg.text), "The listing offers more than one type.")
+        hits = [(t, m) for t, p in _TEXT_TYPES for m in p.finditer(sentence)]
+        types = {t for t, _ in hits}
+        if len(types) > 1:
+            spans = sorted((m.start(), m.end(), t) for t, m in hits)
+            for (_, e1, t1), (s2, _, t2) in zip(spans, spans[1:], strict=False):
+                if t1 != t2 and re.fullmatch(r"\s*(?:,\s*)?(?:or|/|and/or)\s*", sentence[e1:s2], re.I):
+                    return EmploymentFacts(None, False, _quote(seg.text), "The listing offers more than one type.")
+        for t in types:
+            found.setdefault(t, _quote(seg.text))
+    kinds = set(found) - _HOURS_TYPES if set(found) - _HOURS_TYPES else set(found)
+    if len(kinds) == 1:
+        t = kinds.pop()
+        return EmploymentFacts(t, t == "internship", found[t])
+    if kinds:
+        return EmploymentFacts(
+            None, False, " / ".join(found[k] for k in sorted(kinds)), "The listing states conflicting types."
+        )
+    return EmploymentFacts(None, False)
+
+
+def employment_type(title: str, hint: str | None, text: str = "") -> tuple[str | None, bool]:
+    e = detect_employment(title, hint, text)
+    return e.value, e.is_internship
+
+
+# ── Experience ─────────────────────────────────────────────────────────────────────────────────
+_YRS = r"(?:years?|yrs?)\b"
+_N = r"(\d{1,2}(?:\.\d)?)"
+_EXP_RANGE = re.compile(rf"{_N}\s*\+?\s*(?:-|–|—|to)\s*{_N}\s*\+?\s*{_YRS}", re.I)
+_EXP_MIN = re.compile(
+    rf"(?:(?:at least|minimum(?: of)?|min\.?|over|more than)\s+)?{_N}\s*(?:\+|plus)?\s*\+?\s*{_YRS}", re.I
+)
+_EXP_AFTER = re.compile(
+    r"^(?:'s)?\s*(?:of\s+)?(?:(?:professional|relevant|industry|hands-on|practical|proven|commercial|prior|total|"
+    r"overall|work(?:ing)?|full[- ]time)\s+)*(?:experience|exp\b)|^(?:'s)?\s*(?:of\s+)?(?:[\w/+#.-]+\s+){0,4}?experience\b|"
+    r"^\s*(?:of\s+)?(?:hands-on\s+|professional\s+)?(?:building|developing|working|writing|designing|leading|managing|"
+    r"programming|coding|shipping|running|operating|delivering|engineering|as an?\b|in (?:an? |the )?[\w-]+ "
+    r"(?:role|position|environment|team|industry|setting|capacity))",
+    re.I,
+)
+_EXP_BEFORE = re.compile(
+    r"(?:experience|exp\.?)(?:\s+(?:required|level|needed|range))?\s*[:\-–]\s*$|experience of\s*$", re.I
+)
+_NOT_EXPERIENCE_BEFORE = re.compile(
+    r"\b(?:past|last|the|within|next|first|founded|since|around for|operating for|been|in business for|for over)\s*$",
+    re.I,
+)
+_NOT_EXPERIENCE_AFTER = re.compile(
+    r"^\s*(?:ago|old|young|running|in business|of age|of (?:growth|history|operations?|existence|business|service|"
+    r"innovation|excellence))\b",
+    re.I,
+)
+_SUB_REQUIREMENT = re.compile(r"(?:including|incl\.?|of which|out of which|among which|with)\s+(?:at least\s+)?$", re.I)
+_NO_EXPERIENCE = re.compile(
+    r"\bfreshers?\b(?! (?:are )?not)|\bno (?:prior |previous |professional |work )?experience (?:is )?"
+    r"(?:required|necessary|needed)\b|\bentry[- ]level\b|\bnew grad(?:uate)?s?\b|\brecent graduates?\b",
     re.I,
 )
 
 
 @dataclass
-class SkillSplit:
-    required: list[str] = field(default_factory=list)
-    preferred: list[str] = field(default_factory=list)
+class ExperienceFacts:
+    minimum: float | None = None  # mandatory
+    maximum: float | None = None
+    preferred_minimum: float | None = None  # "3+ years preferred": never treated as a requirement
+    evidence: str | None = None
+    preferred_evidence: str | None = None
+    stated_minimums: list[float] = field(default_factory=list)  # every primary mandatory statement
 
 
-def split_skills(text: str) -> SkillSplit:
-    """Classify skills as required vs preferred using the section in which they appear."""
-    required: dict[str, None] = {}
-    preferred: dict[str, None] = {}
-    mode = "required"
-    for line in text.splitlines():
-        stripped = line.strip()
-        if len(stripped) < 80 and _PREFERRED_HDR.search(stripped):
-            mode = "preferred"
-        elif len(stripped) < 80 and _REQUIRED_HDR.search(stripped):
-            mode = "required"
-        line_mode = "preferred" if _PREFERRED_HDR.search(stripped) else mode
-        for skill in taxonomy.extract_skills(stripped):
-            (preferred if line_mode == "preferred" else required)[skill] = None
-    for s in list(preferred):
-        if s in required:
-            del preferred[s]
-    return SkillSplit(list(required), list(preferred))
+def _accept_years(sentence: str, m: re.Match[str], section: str) -> bool:
+    before, after = sentence[max(0, m.start() - 40) : m.start()], sentence[m.end() : m.end() + 70]
+    if _NOT_EXPERIENCE_BEFORE.search(before) or _NOT_EXPERIENCE_AFTER.match(after):
+        return False
+    if _EXP_AFTER.match(after) or _EXP_BEFORE.search(before):
+        return True
+    if re.match(r"\s*of\s+", after) and taxonomy.find_skills(after[:40], listing=True):
+        return True  # "3+ years of Python"
+    if section in (MANDATORY, PREFERRED) and re.match(r"\s*in\s+\w", after):
+        return True  # "5+ years in product management" under a requirements heading
+    if re.search(r"\bexperienc\w*\b[^.;]{0,80}\bfor\s*$", sentence[: m.start()], re.I):
+        return True  # "Experience operating Kubernetes in production for at least 4 years"
+    stated = section in (MANDATORY, PREFERRED) or re.search(
+        r"\b(?:must have|requires?|need(?:s)?|with)\s*$", sentence[: m.start()], re.I
+    )
+    if stated and re.match(r"\s*(?:of\s+)?[a-z]+ing\b", after, re.I):
+        return True  # "Must have 2 years supervising warehouse staff"
+    rest = (sentence[: m.start()] + sentence[m.end() :]).strip(" .,:;-–•")
+    # A bare "• 2 to 4 years" under a requirements heading, or "Ideally 5+ years." / "4+ years preferred."
+    return (section in (MANDATORY, PREFERRED) or bool(_cue_matches(sentence))) and len(rest.split()) <= 2
+
+
+def experience(text: str, segs: list[Segment] | None = None) -> ExperienceFacts:
+    """Years of experience: mandatory (min, max) and a separate preferred minimum, with the quoted sentence.
+    Company history ("founded 15 years ago"), version numbers and sub-requirements ("including 2 years managing")
+    are not requirements. "Freshers welcome" / "No prior experience required" mean a minimum of 0 with no maximum."""
+    out = ExperienceFacts()
+    mandatory: list[tuple[float, float | None, str]] = []
+    no_experience: str | None = None
+    for seg in segs if segs is not None else segments(text):
+        if seg.section == IGNORED:
+            continue
+        s = seg.text
+        cues = _cue_matches(s)
+        found: list[tuple[re.Match[str], float, float | None]] = []
+        for m in _EXP_RANGE.finditer(s):
+            lo, hi = float(m.group(1)), float(m.group(2))
+            if lo < hi <= 30 and _accept_years(s, m, seg.section):
+                found.append((m, lo, hi))
+        for m in _EXP_MIN.finditer(s):
+            if any(f.start() <= m.start(1) < f.end() for f, _, _ in found):
+                continue
+            v = float(m.group(1))
+            if v <= 30 and _accept_years(s, m, seg.section):
+                found.append((m, v, None))
+        for m, lo, hi in sorted(found, key=lambda f: f[0].start()):
+            tier = _cue_tier(cues, m.start(), m.end()) or seg.section
+            if tier == MENTIONED and any(c.tier == MENTIONED for c in cues):
+                continue  # "experience is not required"
+            if tier == PREFERRED:
+                if out.preferred_minimum is None:
+                    out.preferred_minimum, out.preferred_evidence = lo, _quote(s)
+                continue
+            if _SUB_REQUIREMENT.search(s[: m.start()]) and mandatory:
+                continue  # "8 years, including 2 years managing teams"
+            mandatory.append((lo, hi, _quote(s)))
+        if no_experience is None and _NO_EXPERIENCE.search(s):
+            no_experience = _quote(s)
+    if mandatory:
+        out.minimum, out.maximum, out.evidence = mandatory[0]
+        out.stated_minimums = sorted({lo for lo, _, _ in mandatory})
+    elif no_experience:
+        out.minimum, out.evidence = 0.0, no_experience
+    return out
+
+
+def experience_range(text: str) -> tuple[float | None, float | None]:
+    x = experience(text)
+    return x.minimum, x.maximum
+
+
+# ── Work arrangement ───────────────────────────────────────────────────────────────────────────
+_MODE_CUES = tuple(
+    (mode, re.compile(p, re.I))
+    for mode, p in (
+        (
+            "onsite",
+            r"\bon[- ]?site\b|\bin[- ]office\b|\bin the office\b|\boffice[- ]based\b|\bwork(?:ing)? from (?:the |our )?office\b|"
+            r"\bwfo\b|\b5 days (?:a|per|/) ?week (?:in|at|from) (?:the |our )?office\b|"
+            r"\bwork(?:ing)? (?:from|at|in) (?:the |our )?(?:[\w-]+ ){0,2}office\b|\bbased (?:in|at|out of) (?:the |our )?(?:[\w-]+ ){0,2}office\b",
+        ),
+        (
+            "hybrid",
+            r"\bhybrid\b|\b[1-4] days? (?:a |per |/ ?)?(?:week )?(?:(?:in|at|from) (?:the |our )?office|wfo|work from office)\b|"
+            # "onsite from our New York office three or more days per week": office days of a hybrid schedule
+            r"\b(?:one|two|three|four|[1-4])(?: or more| to (?:two|three|four|[2-4]))? days? (?:a|per|/|each) ?week\b"
+            r"(?=[^.;]*\b(?:office|on-?site|in[- ]person)\b)|(?<=office )(?:one|two|three|four|[1-4])(?: or more)? days? (?:a|per) week\b",
+        ),
+        (
+            "remote",
+            r"\b(?:fully |100% |completely )?remote\b|\bwork(?:ing)? from home\b|\bwfh\b|\bwork from anywhere\b|"
+            r"\bwork(?:ing)? remotely\b|\bremotely from\b",
+        ),
+    )
+)
+# "remote troubleshooting", "on-site interview", "hybrid cloud": the word doesn't describe where the role is done.
+_MODE_NOT_ARRANGEMENT = re.compile(
+    r"^[- ]?(?:troubleshooting|sensing|monitoring|access|support|debugging|diagnostics|management|desktop|server|"
+    r"control|patient|learning|interviews?|onboarding|hiring|tools?|work experience|experience|visits?|events?|"
+    r"customers?|clients?|cloud|apps?|applications?|mobile|infrastructure|environments?|vehicles?|engines?|"
+    r"workers|employees|colleagues|perks|benefits|amenities|lunch|meals|snacks|conversions?|rates?)\b",
+    re.I,
+)
+# "meeting customers onsite", "travel to client sites on-site": about someone else's premises.
+_MODE_ABOUT_OTHERS = re.compile(
+    r"\b(?:customers?|clients?|partners?|users?|patients?|visit\w*|travel\w*)\s+(?:\w+\s+)?$", re.I
+)
+_COMPANY_LEVEL = re.compile(
+    r"^[- ]?(?:first|friendly)\b|^\s*(?:team|teams|company|culture|organi[sz]ation|workforce|team members)\b", re.I
+)
+_ROLE_LEVEL = re.compile(
+    r"\b(?:this|the) (?:role|position|job|opportunity)\b|\byou(?:'ll| will)? (?:work|be working|be based)\b|"
+    r"\bwork(?:place)? (?:arrangement|mode|type|model|location|setup)\b|\blocation\s*:|\bthis is an?\b",
+    re.I,
+)
+# Remote work on set days ("WFH allowed on Fridays", "remote 2 days a week") describes a hybrid schedule …
+_PART_TIME_REMOTE = re.compile(
+    r"^[\w\s']{0,15}?\b(?:on (?:mondays?|tuesdays?|wednesdays?|thursdays?|fridays?)|[1-4] days?|"
+    r"(?:one|two|three|four) days?|once a week|twice a week|some days|flexib\w*)\b",
+    re.I,
+)
+# … while occasional remote work ("occasional remote days", "WFH occasionally") doesn't change where the role is.
+_OCCASIONAL = re.compile(r"\b(?:occasional(?:ly)?|from time to time|now and then|ad[- ]hoc|when needed)\b", re.I)
+_MODE_NEGATED = re.compile(r"(?:\b(?:not|isn't|aren't|no|never|cannot|can't|won't)\b[\w\s'-]{0,15}|\bnon[- ]?)$", re.I)
+
+_REGION_NAMES = {
+    "india": "India",
+    "united states": "United States",
+    "usa": "United States",
+    "us": "United States",
+    "u.s.": "United States",
+    "u.s": "United States",
+    "united kingdom": "United Kingdom",
+    "uk": "United Kingdom",
+    "canada": "Canada",
+    "germany": "Germany",
+    "france": "France",
+    "spain": "Spain",
+    "portugal": "Portugal",
+    "netherlands": "Netherlands",
+    "ireland": "Ireland",
+    "poland": "Poland",
+    "europe": "Europe",
+    "eu": "European Union",
+    "emea": "EMEA",
+    "apac": "APAC",
+    "latam": "LATAM",
+    "americas": "Americas",
+    "north america": "North America",
+    "latin america": "Latin America",
+    "asia": "Asia",
+    "australia": "Australia",
+    "singapore": "Singapore",
+    "japan": "Japan",
+    "philippines": "Philippines",
+    "brazil": "Brazil",
+    "mexico": "Mexico",
+    "uae": "UAE",
+}
+# Abbreviations must be upper case ("US", not "us").
+_REGION = (
+    r"(?:US|U\.S\.?|USA|UK|EU|EMEA|APAC|LATAM|UAE|(?i:india|united states|united kingdom|canada|germany|france|spain|"
+    r"portugal|netherlands|ireland|poland|europe|americas|north america|latin america|asia|australia|singapore|japan|"
+    r"philippines|brazil|mexico))"
+)
+_REGION_LIST = rf"{_REGION}(?:\s*(?:,|/|\bor\b|\band\b)\s*{_REGION})*"
+_REGION_IN_TEXT = (
+    re.compile(
+        rf"(?i:remote(?:ly)?)\s*(?:\(|-|–|—|,|:)?\s*(?:(?i:only)\s+)?(?:(?i:within|in|from|across|based in|for)\s+)?"
+        rf"(?:(?i:anywhere)\s+(?:(?i:in|within)\s+)?)?(?:(?i:the)\s+)?({_REGION_LIST})\b"
+    ),
+    re.compile(rf"({_REGION_LIST})[- ](?:(?i:based)\s+)?(?i:remote)\b"),
+    re.compile(
+        rf"(?i:must|should|need to)\s+(?i:be\s+)?(?i:based|located|resid\w*|living)\s+(?i:in)\s+(?:(?i:the)\s+)?({_REGION_LIST})\b"
+    ),
+    re.compile(
+        rf"(?i:open to (?:candidates|applicants)) (?:(?i:based|located) )?(?i:in) (?:(?i:the) )?({_REGION_LIST})\b"
+    ),
+)
+
+
+@dataclass
+class WorkArrangement:
+    mode: str | None = None  # remote | hybrid | onsite
+    evidence: str | None = None
+    region: str | None = None  # where a remote role may be done from ("India", "EMEA"); informational only
+    region_evidence: str | None = None
+
+
+def _regions(found: str) -> str:
+    names = [
+        _REGION_NAMES.get(r.lower().strip(), r.strip())
+        for r in re.split(r"\s*(?:,|/|\bor\b|\band\b)\s*", found)
+        if r.strip()
+    ]
+    return ", ".join(dict.fromkeys(names))
+
+
+def work_arrangement(location: str | None, text: str = "", segs: list[Segment] | None = None) -> WorkArrangement:
+    """Remote, hybrid or on-site, from statements about this role. Negations ("not remote") rule a mode out;
+    adjective uses ("remote troubleshooting") and company-level wording ("remote-first company") count only when
+    nothing describes the role itself. Statements about the role beat the location field, which beats generic
+    wording. Equally strong statements that disagree leave it unknown."""
+    statements: list[tuple[float, str, str]] = []  # (strength, mode, quote); quote identifies the sentence
+    negated: set[str] = set()
+    sources: list[tuple[str, float, bool]] = []  # (sentence, base strength, is_location)
+    if location:
+        sources.append((location, 2.5, True))
+    for seg in segs if segs is not None else segments(text):
+        if seg.section != IGNORED:
+            sources.append((seg.text, 3.0 if _ROLE_LEVEL.search(seg.text) or len(seg.text) <= 40 else 2.0, False))
+    for sentence, strength, is_location in sources:
+        # Longest wording first, so "3 days a week in office" (hybrid) isn't also read as "in office" (on-site).
+        cues = sorted(
+            ((mode, m) for mode, pattern in _MODE_CUES for m in pattern.finditer(sentence)),
+            key=lambda c: c[1].start() - c[1].end(),
+        )
+        taken: list[tuple[int, int]] = []
+        for mode, m in cues:
+            if any(a < m.end() and m.start() < b for a, b in taken):
+                continue
+            taken.append(m.span())
+            if _MODE_NEGATED.search(sentence[max(0, m.start() - 25) : m.start()]):
+                negated.add(mode)
+                continue
+            after = sentence[m.end() : m.end() + 30]
+            if _MODE_NOT_ARRANGEMENT.match(after) or _MODE_ABOUT_OTHERS.search(
+                sentence[max(0, m.start() - 30) : m.start()]
+            ):
+                continue
+            st, md = strength, mode
+            if mode == "remote" and (
+                _COMPANY_LEVEL.match(after)
+                or re.search(
+                    r"\b(?:we are|we're|our)\s+(?:a\s+)?(?:fully\s+)?$",
+                    sentence[max(0, m.start() - 20) : m.start()],
+                    re.I,
+                )
+            ):
+                st = 1.0  # "remote-first company", "we're fully remote": about the company, not this role
+            if mode == "remote" and (
+                _OCCASIONAL.search(sentence[max(0, m.start() - 20) : m.start()])
+                or _OCCASIONAL.search(sentence[m.end() : m.end() + 25])
+            ):
+                continue  # "Occasional remote work is possible": not this role's arrangement
+            if mode == "remote" and _PART_TIME_REMOTE.match(after):
+                md = "hybrid"
+            quote = f"Location: “{sentence}”" if is_location else _quote(sentence)
+            statements.append((st, md, quote))
+    statements = [s for s in statements if s[1] not in negated]
+    out = WorkArrangement()
+    if statements:
+        top = max(s[0] for s in statements)
+        modes = {s[1] for s in statements if s[0] == top}
+        same_sentence = len({s[2] for s in statements if s[0] == top}) == 1
+        if modes == {"hybrid", "onsite"} and same_sentence:
+            modes = {"hybrid"}  # "Hybrid: Tue–Thu in office" names the office days of a hybrid schedule
+        if len(modes) == 1:
+            out.mode = modes.pop()
+            out.evidence = next(s[2] for s in statements if s[0] == top)
+    if out.mode == "remote":
+        for sentence, _, is_location in sources:
+            for pattern in _REGION_IN_TEXT:
+                if (m := pattern.search(sentence)) and m.group(1):
+                    out.region = _regions(m.group(1))
+                    out.region_evidence = f"Location: “{sentence}”" if is_location else _quote(sentence)
+                    break
+            if out.region:
+                break
+    return out
+
+
+def work_mode(*hints: str | None) -> str | None:
+    """The work arrangement stated in a location and/or text."""
+    location, *rest = [*hints, None]
+    return work_arrangement(location, " ".join(h for h in rest if h)).mode

@@ -7,7 +7,8 @@ and the information that was missing.
 | Rule       | Rejects when …                                                     | Needs review when …                                                 |
 |------------|--------------------------------------------------------------------|---------------------------------------------------------------------|
 | SALARY     | verified minimum annual CTC is not strictly above your threshold    | advertised-only pay; unknown currency or period; no fresh FX rate; employer pay field conflicts with the description |
-| STIPEND    | verified stipend is below your minimum (internships only)            | advertised-only, currency unknown, no fresh FX rate                  |
+| STIPEND    | verified stipend is below your minimum (internships); a verified or advertised stipend below your apprenticeship minimum | internships: advertised-only; currency unknown; no fresh FX rate |
+| COMPENSATION | never                                                              | an apprenticeship's pay isn't called either a salary or a stipend (or is called both) |
 | SKILLS     | the listing calls ≥2 skills mandatory ("must have" …) and you have none | no overlap with the extracted skills, under half covered, or some mandatory skills missing |
 | EXPERIENCE | you are more than 2 years short of the stated minimum                | 1–2 years short, or the listing states conflicting requirements      |
 | SENIORITY  | the title's seniority implies >3 more years than you have            | 2–3 years more, or the title conflicts with the stated experience    |
@@ -23,13 +24,13 @@ otherwise MANUAL_REVIEW if any check needs review, otherwise ELIGIBLE.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
 from app.domain import fx
 from app.domain import job_parsing as jp
 from app.domain.locations import mentions_city
-from app.domain.salary_policy import SalaryFacts, SalaryPolicy, evaluate
+from app.domain.salary_policy import SalaryFacts, SalaryPolicy, evaluate, evaluate_apprentice_stipend
 
 if TYPE_CHECKING:
     from app.domain.matching import CandidateProfile, JobFacts
@@ -43,6 +44,9 @@ RULES = {
     "eligible; advertised-only pay, unknown or ambiguous currency or period, no fresh exchange rate, or a "
     "conflict between the employer's pay field and the description → manual review.",
     "STIPEND": "Internship stipends are judged separately against your minimum monthly stipend.",
+    "COMPENSATION": "Apprenticeship pay is judged against your apprenticeship stipend policy only when the listing "
+    "calls it a stipend, and against your salary threshold only when it calls it salary, CTC or wages. Otherwise "
+    "neither rule is applied and the job needs review.",
     "SKILLS": "Rejected only if the listing explicitly calls 2+ skills mandatory and you have none of them; "
     "review if no extracted skill matches, you cover under half, or a mandatory skill is missing.",
     "EXPERIENCE": "Rejected if you are more than 2 years short of the stated minimum; review if 1–2 years short or "
@@ -53,7 +57,7 @@ RULES = {
     "Bengaluru) is outside your preferences; review if the listing contradicts itself or doesn't state "
     "something you have a preference for.",
     "EMPLOYMENT": "Rejected if the employment type isn't one you selected; review if you restrict employment "
-    "type and the listing doesn't state it.",
+    "type and the listing doesn't state it or contradicts itself.",
 }
 # Minimum years a title's seniority usually implies.
 SENIORITY_YEARS = {"intern": 0.0, "junior": 0.0, "mid": 2.0, "senior": 5.0, "staff+": 8.0}
@@ -67,6 +71,9 @@ class Check:
     explanation: str
     evidence: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    # Structured facts behind the decision (apprenticeship pay: type, amount, currency, period, source,
+    # verification, quotes, applied policy and reason code). Empty for other checks.
+    details: dict = field(default_factory=dict)
 
 
 def quote(text: str, pattern: str, limit: int = 180) -> str | None:
@@ -91,13 +98,13 @@ def quote(text: str, pattern: str, limit: int = 180) -> str | None:
 PERIOD_LABEL = {"year": "per year", "month": "per month", "hour": "per hour"}
 
 
-def describe_pay(s: SalaryFacts) -> str:
+def describe_pay(s: SalaryFacts, kind: str = "salary") -> str:
     """Employer-provided pay, stating plainly what is and isn't known."""
     values = [v for v in (s.minimum, s.maximum) if v is not None]
     rng = f"{values[0]:,.0f}" if len(set(values)) == 1 else "–".join(f"{v:,.0f}" for v in values)
     cur = fx.identify(s.currency)
     cur_txt = cur or (f"Currency ambiguous ({s.currency})" if s.currency else "Currency not stated")
-    return f"Employer-provided salary · {rng} · {cur_txt} · {PERIOD_LABEL.get(s.period or '', 'Period not stated')}"
+    return f"Employer-provided {kind} · {rng} · {cur_txt} · {PERIOD_LABEL.get(s.period or '', 'Period not stated')}"
 
 
 def _annual(amount: float, period: str | None) -> float:
@@ -132,10 +139,126 @@ def salary_conflict(s: SalaryFacts, description: str) -> tuple[str, str] | None:
     return describe_pay(s), quote(description, re.escape(t.text or "")) or f"“{t.text}”"
 
 
-def _salary(job: JobFacts, policy: SalaryPolicy, fxc: fx.FxContext | None) -> Check:
-    d = evaluate(job.salary, policy, fxc)
-    outcome: Outcome = {"eligible": "pass", "ineligible": "reject", "manual_review": "review"}[d.decision]
+VERIFICATION = {"verified": "EMPLOYER_VERIFIED", "advertised": "ADVERTISED_UNVERIFIED"}
+
+
+def _apprenticeship_pay(job: JobFacts, policy: SalaryPolicy, fxc: fx.FxContext | None) -> Check:
+    """Apprenticeship pay, judged by what the listing calls it: a stipend against the apprenticeship stipend
+    policy, a salary/CTC/wage against the salary threshold. Neither or both → COMPENSATION (review), never
+    inferred from the amount. Every decision records what was found and which policy was applied."""
     s = job.salary
+    kinds = jp.compensation_wording(job.description, s.text)
+    kind = next(iter(kinds)) if len(kinds) == 1 else None
+    has_pay = s.minimum is not None or s.maximum is not None
+    details: dict = {
+        "employment_type": "apprenticeship",
+        "compensation_type": kind or ("salary and stipend" if kinds else "not stated"),
+        "amount_min": s.minimum,
+        "amount_max": s.maximum,
+        "currency": fx.identify(s.currency) or s.currency,
+        "currency_identified": fx.identify(s.currency) is not None,
+        "period": s.period,
+        "source": ("structured field" if s.disclosure == "verified" else "job description") if has_pay else None,
+        "verification": VERIFICATION.get(s.disclosure, "NOT_DISCLOSED") if has_pay else "NOT_DISCLOSED",
+        "wording_quote": " / ".join(kinds[k] for k in sorted(kinds)) or None,
+        "pay_quote": f"“{s.text}”" if s.text else None,
+    }
+    evidence: list[str] = []
+    if has_pay:
+        line = describe_pay(s, kind or "pay")
+        if s.disclosure != "verified":  # never shown as employer-provided
+            line = line.replace(
+                f"Employer-provided {kind or 'pay'}",
+                f"Advertised {kind or 'pay'} · from the description, unverified",
+                1,
+            )
+        evidence.append(line)
+        if details["pay_quote"]:
+            evidence.append(details["pay_quote"])
+    evidence.extend(kinds[k] for k in sorted(kinds) if kinds[k] not in evidence)
+
+    def done(rule: str, outcome: Outcome, code: str, text: str, missing: list[str], applied: dict) -> Check:
+        details["policy"], details["reason_code"] = applied, code
+        return Check(rule, outcome, code, text, evidence, missing, details)
+
+    if kind is None:
+        if not has_pay:
+            as_salary = evaluate(replace(s, is_internship=False), policy, fxc)
+            as_stipend = evaluate_apprentice_stipend(s, policy, fxc)
+            if as_salary.decision == as_stipend.decision == "eligible":
+                return done(
+                    "COMPENSATION",
+                    "pass",
+                    "APPRENTICESHIP_PAY_UNDISCLOSED",
+                    "Pay isn't disclosed. Your salary and stipend policies both accept undisclosed pay.",
+                    ["compensation"],
+                    {"applied": "none (both policies accept undisclosed pay)"},
+                )
+        what = (
+            "calls the pay both a salary and a stipend"
+            if kinds
+            else "doesn't say whether the pay is a salary or a stipend"
+        )
+        return done(
+            "COMPENSATION",
+            "review",
+            "APPRENTICESHIP_PAY_TYPE_UNCLEAR",
+            f"This apprenticeship listing {what}, so neither your salary threshold nor your stipend minimum was "
+            "applied. Check the pay yourself.",
+            ["compensation type"],
+            {"applied": "none"},
+        )
+    if kind == "stipend":
+        d = evaluate_apprentice_stipend(s, policy, fxc)
+        applied = {
+            "applied": "apprenticeship stipend minimum",
+            "minimum": policy.apprentice_min_stipend,
+            "currency": policy.apprentice_stipend_currency,
+            "period": policy.apprentice_stipend_period,
+            "advertised_stipends": policy.apprentice_advertised_stipend,
+            "advertised_meeting_minimum": policy.apprentice_unverified_outcome,
+            "allow_undisclosed_stipend": policy.allow_undisclosed_stipend,
+        }
+        note = "The listing calls this apprenticeship's pay a stipend, so your apprenticeship stipend policy applies. "
+    else:
+        d = evaluate(replace(s, is_internship=False), policy, fxc)
+        applied = {
+            "applied": "salary threshold",
+            "min_ctc_lpa": policy.min_ctc_lpa,
+            "allow_undisclosed_salary": policy.allow_undisclosed_salary,
+        }
+        note = "The listing calls this apprenticeship's pay a salary, so your salary threshold applies. "
+    if conflict := salary_conflict(s, job.description):
+        evidence[:] = list(conflict)
+        return done(
+            d.rule,
+            "review",
+            "SAL_CONFLICT",
+            note + "The employer's pay field and the description state different pay. Check which is right.",
+            [],
+            applied,
+        )
+    if d.normalized.get("conversion") and d.normalized["conversion"] != "unavailable":
+        evidence.append(str(d.normalized["conversion"]))
+    outcome: Outcome = {"eligible": "pass", "ineligible": "reject", "manual_review": "review"}[d.decision]
+    missing = []
+    if d.code.endswith(("UNDISCLOSED", "UNDISCLOSED_REVIEW")):
+        missing.append(kind)
+    elif d.code.endswith("CURRENCY_UNKNOWN"):
+        missing.append(f"{kind} currency")
+    elif d.code.endswith("PERIOD_UNSUPPORTED"):
+        missing.append(f"{kind} period")
+    elif d.code == "SAL_MIN_UNKNOWN":
+        missing.append("minimum salary")
+    return done(d.rule, outcome, d.code, note + d.reason, missing, applied)
+
+
+def _salary(job: JobFacts, policy: SalaryPolicy, fxc: fx.FxContext | None) -> Check:
+    if job.employment_type == "apprenticeship" and not job.is_internship:
+        return _apprenticeship_pay(job, policy, fxc)
+    s = job.salary
+    d = evaluate(s, policy, fxc)
+    outcome: Outcome = {"eligible": "pass", "ineligible": "reject", "manual_review": "review"}[d.decision]
     conflict = salary_conflict(s, job.description)
     if conflict:
         return Check(
@@ -195,11 +318,17 @@ def _skills(job: JobFacts, matched: list[str], related: list[dict], missing_req:
     req = job.required_skills
     if not req:
         listed = job.preferred_skills
+        if listed:
+            note = " (only nice-to-haves)."
+        elif job.mentioned_skills:
+            note = f" (it mentions {', '.join(job.mentioned_skills[:5])}, but doesn't say they're required)."
+        else:
+            note = "."
         return Check(
             "SKILLS",
             "unknown",
             "SKILLS_NOT_STATED",
-            "The listing doesn't name required skills" + (" (only nice-to-haves)." if listed else "."),
+            "The listing doesn't name required skills" + note,
             missing=["required skills"],
         )
     have_req = [s for s in matched if s in req]
@@ -251,19 +380,17 @@ def _skills(job: JobFacts, matched: list[str], related: list[dict], missing_req:
 _YEARS = r"\d{1,2}\s*(?:\+|plus)?\s*(?:-|–|to)?\s*\d{0,2}\s*\+?\s*(?:years|yrs)"
 
 
-def _stated_minimums(text: str) -> list[float]:
-    found = [float(m.group(1)) for m in jp._EXP_RANGE.finditer(text)]
-    found += [float(x) for x in jp._EXP_MIN.findall(text)]
-    return sorted({v for v in found if v <= 30})
-
-
 def _experience(job: JobFacts, cand: CandidateProfile) -> Check:
+    stated = jp.experience(job.description)
     if job.experience_min is None:
+        preferred = stated.preferred_minimum
         return Check(
             "EXPERIENCE",
             "unknown",
             "EXPERIENCE_NOT_STATED",
-            "The listing doesn't state an experience requirement.",
+            "The listing doesn't state an experience requirement"
+            + (f" (it prefers {preferred:g}+ years, but doesn't require them)." if preferred is not None else "."),
+            [stated.preferred_evidence] if stated.preferred_evidence else [],
             missing=["experience requirement"],
         )
     req = (
@@ -271,7 +398,7 @@ def _experience(job: JobFacts, cand: CandidateProfile) -> Check:
         if job.experience_max is not None
         else (f"{job.experience_min:g}+ years")
     )
-    evidence = [q] if (q := quote(job.description, _YEARS)) else [f"Requires {req}"]
+    evidence = [stated.evidence or quote(job.description, _YEARS) or f"Requires {req}"]
     if cand.years_experience is None:
         return Check(
             "EXPERIENCE",
@@ -281,7 +408,7 @@ def _experience(job: JobFacts, cand: CandidateProfile) -> Check:
             evidence,
             ["your years of experience"],
         )
-    mins = _stated_minimums(job.description)
+    mins = stated.stated_minimums
     if len(mins) > 1 and mins[-1] - mins[0] >= 3:
         return Check(
             "EXPERIENCE",
@@ -374,7 +501,16 @@ def _seniority(job: JobFacts, cand: CandidateProfile) -> Check:
 
 
 ALL_MODES = frozenset({"remote", "hybrid", "onsite"})
-ALL_EMPLOYMENT = frozenset({"full_time", "part_time", "contract", "internship"})
+ALL_EMPLOYMENT = frozenset(jp.EMPLOYMENT_TYPES)
+
+
+def employment_restricted(types: list[str]) -> bool:
+    """Whether an employment-type selection rules anything out. No selection means no restriction; otherwise
+    only the selected types are accepted (a selection is never widened to types the user didn't tick)."""
+    chosen = set(types)
+    return bool(chosen) and not chosen >= ALL_EMPLOYMENT
+
+
 # Location strings that name a country or region but no city ("India", "Remote - APAC").
 _REGION_WORDS = frozenset(
     {
@@ -419,8 +555,12 @@ def _location(job: JobFacts, cand: CandidateProfile) -> Check:
     mode_matters = bool(modes) and not set(modes) >= ALL_MODES
     loc = (job.location or "").strip()
     evidence = [f"Location: “{loc}”"] if loc else []
-    if job.work_mode and (q := quote(job.description, r"\b(remote|hybrid|on-?site|in[- ]office)\b")):
-        evidence.append(q)
+    if job.work_mode:
+        stated = jp.work_arrangement(None, job.description)
+        if stated.mode == job.work_mode and stated.evidence:
+            evidence.append(stated.evidence)
+        elif q := quote(job.description, rf"\b{job.work_mode}\b"):
+            evidence.append(q)
 
     def check(outcome: Outcome, code: str, text: str, missing: list[str] | None = None) -> Check:
         return Check("LOCATION", outcome, code, text, evidence, missing or [])
@@ -478,24 +618,24 @@ def _location(job: JobFacts, cand: CandidateProfile) -> Check:
 
 def _employment(job: JobFacts, cand: CandidateProfile) -> Check:
     et = "internship" if job.is_internship else job.employment_type
-    restricted = bool(cand.employment_types) and not set(cand.employment_types) >= ALL_EMPLOYMENT
+    restricted = employment_restricted(cand.employment_types)
     if et is None:
+        # A listing that names several types ("full-time or part-time") is unclear, not silent.
+        unclear = jp.detect_employment(job.title, None, job.description)
+        code = "EMPLOYMENT_UNCLEAR" if unclear.note else "EMPLOYMENT_NOT_STATED"
+        what = (unclear.note or "The listing doesn't state the employment type.").rstrip(".")
+        evidence = [unclear.evidence] if unclear.note and unclear.evidence else []
         if restricted:
             return Check(
                 "EMPLOYMENT",
                 "review",
-                "EMPLOYMENT_NOT_STATED",
-                "The listing doesn't state the employment type, and you only want "
+                code,
+                f"{what}, and you only want "
                 f"{', '.join(t.replace('_', '-') for t in cand.employment_types)} — check before applying.",
+                evidence,
                 missing=["employment type"],
             )
-        return Check(
-            "EMPLOYMENT",
-            "unknown",
-            "EMPLOYMENT_NOT_STATED",
-            "The listing doesn't state the employment type.",
-            missing=["employment type"],
-        )
+        return Check("EMPLOYMENT", "unknown", code, f"{what}.", evidence, missing=["employment type"])
     label = et.replace("_", "-")
     if not restricted:
         return Check("EMPLOYMENT", "pass", "EMPLOYMENT_NO_PREFERENCE", f"{label.title()}; you haven't restricted this.")

@@ -5,11 +5,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
-from app.domain.salary_policy import MAX_DAILY_APPLICATIONS, MAX_MIN_CTC_LPA
+from app.domain.salary_policy import (
+    APPRENTICE_CURRENCIES,
+    MAX_APPRENTICE_STIPEND,
+    MAX_DAILY_APPLICATIONS,
+    MAX_MIN_CTC_LPA,
+)
 
 WorkMode = Literal["remote", "hybrid", "onsite"]
 ExperienceLevel = Literal["fresher", "internship", "0-1", "1-2", "2-3", "3-5", "5+"]
-EmploymentType = Literal["full_time", "part_time", "contract", "internship"]
+EmploymentType = Literal["full_time", "part_time", "contract", "internship", "freelance", "temporary", "apprenticeship"]
 
 
 class ORM(BaseModel):
@@ -84,6 +89,12 @@ class SettingsIn(BaseModel):
     notify_whatsapp: bool
     whatsapp_number: str | None = Field(default=None, pattern=r"^\+?[1-9]\d{7,14}$")
     daily_summary: bool
+    # Apprenticeship stipend policy. Optional in requests: a client that doesn't send them keeps the stored values.
+    apprentice_min_stipend: float | None = Field(default=None, ge=0, le=MAX_APPRENTICE_STIPEND, allow_inf_nan=False)
+    apprentice_stipend_currency: Literal[APPRENTICE_CURRENCIES] = "INR"  # type: ignore[valid-type]
+    apprentice_stipend_period: Literal["month", "year"] = "month"
+    apprentice_advertised_stipend: Literal["compare", "review"] = "compare"
+    apprentice_unverified_outcome: Literal["pass", "review"] = "pass"
 
     @field_validator("min_ctc_lpa")
     @classmethod
@@ -102,6 +113,8 @@ class SettingsIn(BaseModel):
 
 
 class SettingsOut(ORM, SettingsIn):
+    # None only when a stored currency was invalid (reported in `normalized`; never replaced by a guess).
+    apprentice_stipend_currency: str | None = "INR"  # type: ignore[assignment]
     # Stored values that were out of range and are shown (and applied) as the nearest valid value:
     # [{field, stored, effective, reason}]. Saving Settings stores the effective values.
     normalized: list[dict] = Field(default_factory=list)

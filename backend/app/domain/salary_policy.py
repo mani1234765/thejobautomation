@@ -20,6 +20,21 @@ Full-time policy, with the user's threshold T (default ₹8 LPA, editable in Set
 
 Amounts are normalised to annual INR before comparing (monthly × 12; foreign currency via fx.py).
 INR never gets assumed: a verified figure without an identifiable currency always goes to review.
+
+Apprenticeships whose listing calls the pay a stipend use the apprenticeship stipend policy (its own minimum,
+in the currency and period the user chose; `evaluate_apprentice_stipend`). Unlike internships, a stipend found
+only in the description can be compared with the minimum; it is labelled ADVERTISED_UNVERIFIED, never verified.
+
+| Situation                                                    | Decision                    | Code                                   |
+|--------------------------------------------------------------|-----------------------------|----------------------------------------|
+| Stipend not disclosed                                        | per "allow undisclosed stipend" | APPRENTICE_STIPEND_UNDISCLOSED(_REVIEW) |
+| No apprenticeship minimum set                                | eligible                    | APPRENTICE_STIPEND_NO_MINIMUM          |
+| Advertised only, and the user chose "always review"          | manual review               | APPRENTICE_STIPEND_ADVERTISED_REVIEW   |
+| Currency missing or ambiguous; period missing or hourly      | manual review               | APPRENTICE_STIPEND_CURRENCY_UNKNOWN / _PERIOD_UNSUPPORTED |
+| Different currency from the minimum and no fresh rate        | manual review               | APPRENTICE_STIPEND_FX_UNAVAILABLE      |
+| Below the minimum (verified or advertised)                   | rejected                    | APPRENTICE_STIPEND_BELOW_MINIMUM       |
+| Meets or exceeds, verified                                   | eligible                    | APPRENTICE_STIPEND_MEETS_MINIMUM       |
+| Meets or exceeds, advertised                                 | eligible, or review if the user chose so | APPRENTICE_STIPEND_MEETS_MINIMUM_ADVERTISED / APPRENTICE_STIPEND_UNVERIFIED_REVIEW |
 """
 
 from __future__ import annotations
@@ -37,6 +52,17 @@ DEFAULT_MIN_CTC_LPA = 8.0
 # likely than a real requirement, and an unbounded value would silently reject every job.
 MAX_MIN_CTC_LPA = 200.0
 MAX_DAILY_APPLICATIONS = 10_000
+# Currencies the apprenticeship stipend minimum can be set in (each has an unambiguous code; see fx.py).
+APPRENTICE_CURRENCIES = ("INR", "USD", "EUR", "GBP", "CAD", "AUD", "SGD", "PLN")
+MAX_APPRENTICE_STIPEND = 10_000_000.0
+# Defaults for the apprenticeship stipend settings (also the stored defaults for existing users).
+APPRENTICE_DEFAULTS = {
+    "apprentice_min_stipend": None,
+    "apprentice_stipend_currency": "INR",
+    "apprentice_stipend_period": "month",
+    "apprentice_advertised_stipend": "compare",  # compare | review
+    "apprentice_unverified_outcome": "pass",  # pass | review: an advertised stipend that meets the minimum
+}
 
 
 @dataclass(frozen=True)
@@ -45,6 +71,11 @@ class SalaryPolicy:
     allow_undisclosed_salary: bool = True
     min_stipend_monthly_inr: float | None = None
     allow_undisclosed_stipend: bool = True
+    apprentice_min_stipend: float | None = None
+    apprentice_stipend_currency: str | None = "INR"  # None only if a stored value was invalid: then never assumed
+    apprentice_stipend_period: str = "month"  # month | year
+    apprentice_advertised_stipend: str = "compare"
+    apprentice_unverified_outcome: str = "pass"
 
 
 @dataclass(frozen=True)
@@ -215,4 +246,115 @@ def _evaluate_stipend(facts: SalaryFacts, policy: SalaryPolicy, fxc: fx.FxContex
         f"Stipend ₹{monthly_inr:,.0f}/month is below your ₹{policy.min_stipend_monthly_inr:,.0f} minimum.",
         "STIPEND_BELOW_MINIMUM",
         rule,
+    )
+
+
+def evaluate_apprentice_stipend(
+    facts: SalaryFacts, policy: SalaryPolicy, fxc: fx.FxContext | None = None
+) -> SalaryDecision:
+    """An apprenticeship stipend (the listing calls the pay a stipend) against the apprenticeship minimum.
+    Meets-or-exceeds, like internship stipends. Advertised amounts are compared but never treated as verified."""
+    rule = "STIPEND"
+    if facts.disclosure == "undisclosed" or (facts.minimum is None and facts.maximum is None):
+        if policy.allow_undisclosed_stipend:
+            return SalaryDecision(
+                "eligible",
+                "Stipend not disclosed — eligible under your policy.",
+                "APPRENTICE_STIPEND_UNDISCLOSED",
+                rule,
+            )
+        return SalaryDecision(
+            "manual_review",
+            "Stipend not disclosed and your policy requires disclosure.",
+            "APPRENTICE_STIPEND_UNDISCLOSED_REVIEW",
+            rule,
+        )
+    minimum, period = policy.apprentice_min_stipend, policy.apprentice_stipend_period
+    if minimum is None:
+        return SalaryDecision(
+            "eligible", "No apprenticeship stipend minimum is set.", "APPRENTICE_STIPEND_NO_MINIMUM", rule
+        )
+    advertised = facts.disclosure != "verified"
+    if advertised and policy.apprentice_advertised_stipend == "review":
+        return SalaryDecision(
+            "manual_review",
+            "The stipend is only advertised in the description, and you chose to review those yourself.",
+            "APPRENTICE_STIPEND_ADVERTISED_REVIEW",
+            rule,
+        )
+    if policy.apprentice_stipend_currency not in APPRENTICE_CURRENCIES:
+        return SalaryDecision(
+            "manual_review",
+            "Your apprenticeship stipend minimum has no valid currency, so it can't be compared. Set it in Settings.",
+            "APPRENTICE_POLICY_CURRENCY_UNSET",
+            rule,
+        )
+    currency = fx.identify(facts.currency)
+    if currency is None:
+        return SalaryDecision(
+            "manual_review",
+            "The stipend's currency is missing or ambiguous; JobPilot won't assume one.",
+            "APPRENTICE_STIPEND_CURRENCY_UNKNOWN",
+            rule,
+        )
+    if facts.period not in ("year", "month"):
+        return SalaryDecision(
+            "manual_review",
+            "The stipend period is " + (f"“{facts.period}”" if facts.period else "not stated") + ", so it can't be "
+            f"compared with a {'monthly' if period == 'month' else 'yearly'} minimum.",
+            "APPRENTICE_STIPEND_PERIOD_UNSUPPORTED",
+            rule,
+        )
+    amount = facts.minimum if facts.minimum is not None else facts.maximum
+    assert amount is not None
+    if facts.period != period:
+        amount = amount * 12 if period == "year" else amount / 12
+    target_cur = policy.apprentice_stipend_currency
+    normalized: dict = {"amount": round(amount, 2), "currency": currency, "period": period}
+    if currency != target_cur:
+        a, m = fx.to_inr(amount, currency, fxc), fx.to_inr(minimum, target_cur, fxc)
+        if not (a.ok and m.ok):
+            note = a.note if not a.ok else m.note
+            return SalaryDecision(
+                "manual_review",
+                f"The stipend is in {currency} and your minimum is in {target_cur}. {note}",
+                "APPRENTICE_STIPEND_FX_UNAVAILABLE",
+                rule,
+                normalized={**normalized, "conversion": "unavailable"},
+            )
+        amount, minimum = a.amount_inr, m.amount_inr  # type: ignore[assignment]
+        normalized["conversion"] = f"Compared in INR. {a.note} {m.note}".strip()
+    per = "month" if period == "month" else "year"
+    shown = f"{target_cur} {policy.apprentice_min_stipend:,.0f}/{per}"
+    if amount < minimum:  # type: ignore[operator]
+        return SalaryDecision(
+            "ineligible",
+            ("Advertised" if advertised else "Verified") + f" stipend is below your apprenticeship minimum of {shown}.",
+            "APPRENTICE_STIPEND_BELOW_MINIMUM",
+            rule,
+            normalized=normalized,
+        )
+    if not advertised:
+        return SalaryDecision(
+            "eligible",
+            f"Verified stipend meets your apprenticeship minimum of {shown}.",
+            "APPRENTICE_STIPEND_MEETS_MINIMUM",
+            rule,
+            normalized=normalized,
+        )
+    if policy.apprentice_unverified_outcome == "review":
+        return SalaryDecision(
+            "manual_review",
+            f"The advertised stipend meets your minimum of {shown}, but it isn't verified and you chose to review "
+            "unverified stipends.",
+            "APPRENTICE_STIPEND_UNVERIFIED_REVIEW",
+            rule,
+            normalized=normalized,
+        )
+    return SalaryDecision(
+        "eligible",
+        f"The advertised (unverified) stipend meets your apprenticeship minimum of {shown}.",
+        "APPRENTICE_STIPEND_MEETS_MINIMUM_ADVERTISED",
+        rule,
+        normalized=normalized,
     )

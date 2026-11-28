@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatExperience, formatSalary, percent, relativeTime, salarySource, scoreTone } from "./format";
+import {
+  EMPLOYMENT_OPTIONS, formatExperience, formatPolicyValue, formatSalary, groupPolicyChanges, percent, relativeTime, salarySource,
+  scoreTone,
+} from "./format";
 import { wordDiff } from "./diff";
 
 describe("formatSalary", () => {
@@ -34,6 +37,13 @@ describe("formatting helpers", () => {
     expect(formatExperience(0, 1)).toBe("Entry level");
     expect(formatExperience(3, 5)).toBe("3–5 yrs");
     expect(formatExperience(5, null)).toBe("5+ yrs");
+    expect(formatExperience(0, null)).toBe("Entry level"); // "Freshers welcome": minimum 0, no maximum
+  });
+  it("offers all seven employment types, each labelled", () => {
+    expect(EMPLOYMENT_OPTIONS.map((o) => o.value)).toEqual([
+      "full_time", "part_time", "contract", "internship", "freelance", "temporary", "apprenticeship",
+    ]);
+    expect(EMPLOYMENT_OPTIONS.every((o) => o.label.length > 0)).toBe(true);
   });
   it("shows a dash rather than 0% when a rate has no denominator", () => {
     expect(percent(null)).toBe("—");
@@ -49,6 +59,27 @@ describe("formatting helpers", () => {
     expect(scoreTone(null)).toBe("neutral");
     expect(scoreTone(90)).toBe("positive");
     expect(scoreTone(60)).toBe("accent");
+  });
+});
+
+describe("policy changes", () => {
+  it("formats settings as they read on the Settings page", () => {
+    expect(formatPolicyValue("min_ctc_lpa", 12)).toBe("₹12 LPA");
+    expect(formatPolicyValue("allow_undisclosed_salary", false)).toBe("off");
+    expect(formatPolicyValue("apprentice_min_stipend", null)).toBe("no minimum");
+    expect(formatPolicyValue("apprentice_min_stipend", 15000)).toBe("15,000");
+    expect(formatPolicyValue("apprentice_stipend_currency", null)).toBe("not set");
+    expect(formatPolicyValue("apprentice_stipend_period", "year")).toBe("per year");
+    expect(formatPolicyValue("apprentice_advertised_stipend", "review")).toBe("always review");
+    expect(formatPolicyValue("apprentice_unverified_outcome", "review")).toBe("needs review");
+  });
+  it("groups changes by policy, salary first", () => {
+    const groups = groupPolicyChanges([
+      { key: "apprentice_min_stipend", group: "apprenticeship", before: null, after: 15000 },
+      { key: "min_ctc_lpa", group: "salary", before: 10, after: 12 },
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Full-time salary policy", "Apprenticeship stipend policy"]);
+    expect(groupPolicyChanges([])).toEqual([]);
   });
 });
 

@@ -20,7 +20,7 @@ _ASHBY_TYPES = {
     "PartTime": "part_time",
     "Contract": "contract",
     "Intern": "internship",
-    "Temporary": "contract",
+    "Temporary": "temporary",
 }
 
 

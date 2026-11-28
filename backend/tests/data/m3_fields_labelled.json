@@ -1,0 +1,1142 @@
+{
+ "_about": "Labelled synthetic job listings for M3 field extraction (written for JobPilot; no real postings). 'tuning' cases were written during the M3 audit and guided the parser. 'heldout-a' cases were written after the parser and first measured untuned: employment type P 91%/R 100%, mandatory experience P 100%/R 81%, work arrangement P 100%/R 72%, remote region P 100%/R 83%, mandatory skills P 100%/R 100%, preferred skills P 100%/R 93%. 'heldout-b' was written after the heldout-a fixes and first measured untuned: employment P 100%/R 100%, experience P 100%/R 75%, work arrangement P 89%/R 100%, region P 67%/R 100%, mandatory and preferred skills 100%/100%. Misses were then fixed (generally, not per case) and every case kept as a regression case. known_misses lists the fields where the parser still disagrees with the label. Freshers / no experience required = [0, null]. Fixed-term = contract. Soft skills are never mandatory. These numbers describe this small synthetic set only, not real-world accuracy. Owner decision (2026-11-27): a location such as \"London or Remote (UK)\" is remote with region United Kingdom; heldout-b-10 was relabelled accordingly.",
+ "cases": [
+  {
+   "id": "tuning-01-backend-engineer",
+   "set": "tuning",
+   "title": "Backend Engineer",
+   "location": "Bengaluru",
+   "description": "About us\nWe are a global fintech that builds GitLab-style developer tools. Our culture values communication, leadership and security. We use analytics to improve customer experience.\nWhat you'll need\n• 3-5 years of experience with Python and PostgreSQL\n• Experience with Docker\nNice to have\n• Kubernetes\nBenefits\n• Health insurance\n• Annual bonus\n• Learning budget for AWS and Kubernetes certifications\nWe are an equal opportunity employer. We do not discriminate on the basis of race, religion or gender.\n",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     5
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Docker",
+     "PostgreSQL",
+     "Python"
+    ],
+    "preferred": [
+     "Kubernetes"
+    ]
+   }
+  },
+  {
+   "id": "tuning-02-software-engineer",
+   "set": "tuning",
+   "title": "Software Engineer",
+   "location": "Pune",
+   "description": "This is a full-time, permanent position.\nRequirements\n• 4+ years building Java services\n• Kafka\nPreferred qualifications\n• Spring Boot",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": [
+     4,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Java",
+     "Kafka"
+    ],
+    "preferred": [
+     "Spring"
+    ]
+   }
+  },
+  {
+   "id": "tuning-03-data-analyst",
+   "set": "tuning",
+   "title": "Data Analyst",
+   "location": "Remote - India",
+   "description": "6-month contract with possible extension.\nQualifications\n• Minimum 2 years of experience\n• SQL and Excel are required\n• Knowledge of Tableau is a plus\nRemote within India only.",
+   "expected": {
+    "employment_type": "contract",
+    "experience": [
+     2,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "India",
+    "mandatory": [
+     "Excel",
+     "SQL"
+    ],
+    "preferred": [
+     "Tableau"
+    ]
+   }
+  },
+  {
+   "id": "tuning-04-product-design-intern",
+   "set": "tuning",
+   "title": "Product Design Intern",
+   "location": "Mumbai",
+   "description": "Internship opportunity for students. No prior experience required.\nMust have: Figma.",
+   "expected": {
+    "employment_type": "internship",
+    "experience": [
+     0,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Figma"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-05-qa-engineer",
+   "set": "tuning",
+   "title": "QA Engineer",
+   "location": "Chennai",
+   "description": "This role is not remote; you will work on-site in our Chennai office.\nExperience: 3 years\nMust know Selenium.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Selenium"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-06-frontend-developer",
+   "set": "tuning",
+   "title": "Frontend Developer",
+   "location": "Hyderabad",
+   "description": "Hybrid: 3 days a week in office.\nYou have\n• 2+ yrs experience with React and TypeScript\nBonus points\n• Next.js",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     2,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [
+     "React",
+     "TypeScript"
+    ],
+    "preferred": [
+     "Next.js"
+    ]
+   }
+  },
+  {
+   "id": "tuning-07-support-engineer",
+   "set": "tuning",
+   "title": "Support Engineer",
+   "location": "Noida",
+   "description": "Work from office, 5 days a week.\nAt least 1 year of experience in customer support.\nRemote troubleshooting experience preferred.\nJira knowledge is a plus.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     1,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": [
+     "Jira"
+    ]
+   }
+  },
+  {
+   "id": "tuning-08-part-time-content-writer",
+   "set": "tuning",
+   "title": "Part-time Content Writer",
+   "location": "Remote",
+   "description": "Part-time role, 20 hours a week. Fully remote.\nFreshers welcome.",
+   "expected": {
+    "employment_type": "part_time",
+    "experience": [
+     0,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-09-devops-engineer",
+   "set": "tuning",
+   "title": "DevOps Engineer",
+   "location": "Bengaluru",
+   "description": "Founded 15 years ago, we serve 2,000 customers.\nRequirements\n• 5+ years of experience with Terraform and AWS\n• Python 3 scripting",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     5,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "AWS",
+     "Python",
+     "Terraform"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-10-machine-learning-engineer",
+   "set": "tuning",
+   "title": "Machine Learning Engineer",
+   "location": "Remote (US)",
+   "description": "About us\nWe are a global fintech that builds GitLab-style developer tools. Our culture values communication, leadership and security. We use analytics to improve customer experience.\nResponsibilities\n• Build models in PyTorch\nRequirements\n• Python\n• 3+ years of experience\nPreferred\n• Docker, Kubernetes\nThis role is remote within the United States.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "United States",
+    "mandatory": [
+     "Python"
+    ],
+    "preferred": [
+     "Docker",
+     "Kubernetes"
+    ]
+   }
+  },
+  {
+   "id": "tuning-11-freelance-illustrator",
+   "set": "tuning",
+   "title": "Freelance Illustrator",
+   "location": "Remote",
+   "description": "Freelance engagement, paid per project. Work from home.",
+   "expected": {
+    "employment_type": "freelance",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-12-warehouse-associate",
+   "set": "tuning",
+   "title": "Warehouse Associate",
+   "location": "Gurugram",
+   "description": "Temporary role for the festive season (3 months). On-site.",
+   "expected": {
+    "employment_type": "temporary",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-13-software-apprentice",
+   "set": "tuning",
+   "title": "Software Apprentice",
+   "location": "London",
+   "description": "Our apprenticeship programme combines study and work. Office-based in London.",
+   "expected": {
+    "employment_type": "apprenticeship",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-14-site-reliability-engineer",
+   "set": "tuning",
+   "title": "Site Reliability Engineer",
+   "location": "Remote",
+   "description": "Fixed-term employment for 12 months. Remote-first company; occasional travel to Bengaluru.\nMust have\n• Kubernetes\n• Go",
+   "expected": {
+    "employment_type": "contract",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [
+     "Go",
+     "Kubernetes"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-15-backend-engineer-ii",
+   "set": "tuning",
+   "title": "Backend Engineer II",
+   "location": "Bengaluru",
+   "description": "We are a remote-friendly team but this role is office-based in Bengaluru, 4 days a week.\nRequirements\n• Node.js and MongoDB\n• 2 to 4 years",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     2,
+     4
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "MongoDB",
+     "Node.js"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-16-data-engineer",
+   "set": "tuning",
+   "title": "Data Engineer",
+   "location": "Pune",
+   "description": "3+ years of experience preferred.\nSpark and Airflow experience required.",
+   "expected": {
+    "employment_type": null,
+    "experience": null,
+    "experience_preferred_min": 3,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Airflow",
+     "Spark"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-17-engineering-manager",
+   "set": "tuning",
+   "title": "Engineering Manager",
+   "location": "Bengaluru",
+   "description": "At least 8 years of professional experience, including 2 years managing teams.\nWorking from home is allowed on Fridays.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     8,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   },
+   "known_misses": [
+    "work_mode"
+   ]
+  },
+  {
+   "id": "tuning-18-mobile-developer",
+   "set": "tuning",
+   "title": "Mobile Developer",
+   "location": "Kochi",
+   "description": "Full time. 0-2 years of experience. Kotlin is mandatory; Flutter is a plus. Version 2.0 of our app launched in 2024.",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": [
+     0,
+     2
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Kotlin"
+    ],
+    "preferred": [
+     "Flutter"
+    ]
+   }
+  },
+  {
+   "id": "tuning-19-security-analyst",
+   "set": "tuning",
+   "title": "Security Analyst",
+   "location": "Delhi",
+   "description": "Contract-to-hire role. Hybrid.\nWhat we're looking for\n• Experience with application security (OWASP)\n• SIEM tools",
+   "expected": {
+    "employment_type": "contract",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [
+     "Security"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-20-sales-development-representative",
+   "set": "tuning",
+   "title": "Sales Development Representative",
+   "location": "Remote - EMEA",
+   "description": "About us\nWe are a global fintech that builds GitLab-style developer tools. Our culture values communication, leadership and security. We use analytics to improve customer experience.\nYou'll prospect into accounts using Salesforce. Remote within EMEA.\nWe are an equal opportunity employer. We do not discriminate on the basis of race, religion or gender.\n",
+   "expected": {
+    "employment_type": null,
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "EMEA",
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-21-platform-engineer",
+   "set": "tuning",
+   "title": "Platform Engineer",
+   "location": "Bengaluru",
+   "description": "Permanent, full-time role. This position is not hybrid; it is fully on-site.\nRequirements: GCP, Terraform.",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "GCP",
+     "Terraform"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "tuning-22-analytics-engineer",
+   "set": "tuning",
+   "title": "Analytics Engineer",
+   "location": "Remote",
+   "description": "We're hiring a full-time or part-time analytics engineer. Remote.\nRequirements\n• dbt\n• SQL",
+   "expected": {
+    "employment_type": null,
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [
+     "SQL",
+     "dbt"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-01-senior-backend-engineer",
+   "set": "heldout-a",
+   "title": "Senior Backend Engineer",
+   "location": "Remote, India",
+   "description": "Who we are\nAcme Cloud is a remote-first company of 400 people. We've been building developer tools for over 12 years and our leadership team values security, communication and data analytics.\nThe role\nYou'll own our billing services, written in Go and running on Kubernetes.\nWhat you bring\n• 6+ years of backend engineering experience\n• Strong Go and PostgreSQL skills\n• Experience with gRPC\nNice-to-haves\n• Kafka\n• Terraform\nPerks & benefits\n• Flexible hours and work from home stipend\n• Performance bonus\n• Full-time employees get comprehensive health cover\n• Certifications in Azure and GCP paid for\nAcme Cloud is proud to be an Equal Employment Opportunity employer. All qualified applicants will receive consideration without regard to race, colour, religion or disability.\n",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     6,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "India",
+    "mandatory": [
+     "Go",
+     "PostgreSQL",
+     "gRPC"
+    ],
+    "preferred": [
+     "Kafka",
+     "Terraform"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-02-data-scientist",
+   "set": "heldout-a",
+   "title": "Data Scientist",
+   "location": "Bengaluru, Karnataka",
+   "description": "Job Type: Full-time\nExperience: 2-5 yrs\nWork Mode: Hybrid (2 days WFO)\nKey Skills: Python, SQL, Machine Learning\nGood to have: Spark",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": [
+     2,
+     5
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [
+     "Machine Learning",
+     "Python",
+     "SQL"
+    ],
+    "preferred": [
+     "Spark"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-03-ios-engineer",
+   "set": "heldout-a",
+   "title": "iOS Engineer",
+   "location": "London, UK",
+   "description": "About the job\nWe're looking for an iOS engineer to join our payments squad on a 12-month fixed-term contract.\nRequirements\n• Swift and SwiftUI\n• 3+ years shipping iOS apps\nIt would be great if you have experience with GraphQL.\nThis role is based in our London office five days a week.",
+   "expected": {
+    "employment_type": "contract",
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Swift",
+     "iOS"
+    ],
+    "preferred": [
+     "GraphQL"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-04-marketing-intern",
+   "set": "heldout-a",
+   "title": "Marketing Intern",
+   "location": "Remote",
+   "description": "Summer internship (10 weeks), fully remote from anywhere in the EU.\nYou'll support campaigns across SEO and paid social.\nNo experience necessary — curiosity is a must.",
+   "expected": {
+    "employment_type": "internship",
+    "experience": [
+     0,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "European Union",
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-05-customer-success-manager",
+   "set": "heldout-a",
+   "title": "Customer Success Manager",
+   "location": "Austin, TX",
+   "description": "This is a hybrid role: 3 days per week in our Austin office.\nWhat we're looking for\n• 4-6 years in customer success or account management\n• Salesforce experience is preferred\n• Excellent communication skills",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     4,
+     6
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": [
+     "Communication",
+     "Salesforce"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-06-contract-react-developer",
+   "set": "heldout-a",
+   "title": "Contract React Developer",
+   "location": "Remote - US",
+   "description": "3-month contract, possibility of extension. Remote within US time zones.\nMust have: React, TypeScript, Jest.\nPreferred: Next.js.",
+   "expected": {
+    "employment_type": "contract",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "United States",
+    "mandatory": [
+     "Jest",
+     "React",
+     "TypeScript"
+    ],
+    "preferred": [
+     "Next.js"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-07-part-time-bookkeeper",
+   "set": "heldout-a",
+   "title": "Part Time Bookkeeper",
+   "location": "Pune",
+   "description": "We need a part time bookkeeper for 15 hours per week, working from our Pune office.\nYou should have\n• 2 years of bookkeeping experience\n• Tally and Excel",
+   "expected": {
+    "employment_type": "part_time",
+    "experience": [
+     2,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Accounting",
+     "Excel"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-08-graduate-software-engineer",
+   "set": "heldout-a",
+   "title": "Graduate Software Engineer",
+   "location": "Hyderabad",
+   "description": "Graduate programme for the 2025 batch. Freshers can apply.\nEligibility\n• B.Tech in CS or related field\n• Knowledge of Java or Python\n• Data structures and algorithms",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     0,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Data Structures & Algorithms",
+     "Java",
+     "Python"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-09-staff-platform-engineer",
+   "set": "heldout-a",
+   "title": "Staff Platform Engineer",
+   "location": "Berlin",
+   "description": "Our platform runs on AWS and Kubernetes. We have been profitable for 8 years.\nYou have\n• 10+ years of experience in infrastructure roles\n• Deep knowledge of AWS\nIdeally you also have experience with Rust.\nThis position is on-site in Berlin; it is not a remote position.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     10,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "AWS"
+    ],
+    "preferred": [
+     "Rust"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-10-freelance-video-editor",
+   "set": "heldout-a",
+   "title": "Freelance Video Editor",
+   "location": "Anywhere",
+   "description": "We're looking for freelancers to edit short-form videos on a per-project basis. Work remotely from anywhere.",
+   "expected": {
+    "employment_type": "freelance",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-11-seasonal-retail-associate",
+   "set": "heldout-a",
+   "title": "Seasonal Retail Associate",
+   "location": "Mumbai",
+   "description": "Seasonal position from October to January at our Bandra store. On-site only.",
+   "expected": {
+    "employment_type": "temporary",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-12-electrician-apprentice",
+   "set": "heldout-a",
+   "title": "Electrician Apprentice",
+   "location": "Manchester",
+   "description": "Paid apprenticeship with day-release to college. Site-based work across Greater Manchester.",
+   "expected": {
+    "employment_type": "apprenticeship",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-13-devops-engineer",
+   "set": "heldout-a",
+   "title": "DevOps Engineer",
+   "location": "Chennai",
+   "description": "Responsibilities\n• Maintain Jenkins pipelines and Docker images\n• Support remote teams across time zones\nQualifications\n• 3 to 5 years of DevOps experience\n• Linux and Bash scripting\n• Ansible is nice to have\nWork from office, all 5 days.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     5
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Bash",
+     "Linux"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-14-product-manager",
+   "set": "heldout-a",
+   "title": "Product Manager",
+   "location": "Bengaluru",
+   "description": "We are a remote-friendly company, but this team works hybrid from Bengaluru (Tue-Thu in office).\nAbout you\n• 5+ years in product management\n• SQL is a plus\n• You've worked with Jira",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     5,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [
+     "Jira",
+     "Product Management"
+    ],
+    "preferred": [
+     "SQL"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-15-machine-learning-engineer",
+   "set": "heldout-a",
+   "title": "Machine Learning Engineer",
+   "location": "Remote (Canada)",
+   "description": "Full-time, permanent.\nRequired qualifications\n• MSc in ML or 3+ years of applied ML experience\n• PyTorch\nPreferred qualifications\n• Experience deploying LLMs\n• MLOps tooling such as MLflow",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "Canada",
+    "mandatory": [
+     "Machine Learning",
+     "PyTorch"
+    ],
+    "preferred": [
+     "LLMs",
+     "MLOps"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-16-qa-analyst",
+   "set": "heldout-a",
+   "title": "QA Analyst",
+   "location": "Noida",
+   "description": "Full-time or contract options available.\nSkills\n• Selenium\n• Manual testing\n• 1-3 years experience",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     1,
+     3
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Selenium",
+     "Testing"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-17-security-engineer",
+   "set": "heldout-a",
+   "title": "Security Engineer",
+   "location": "Singapore",
+   "description": "We need a security engineer with 5 years of hands-on application security experience. OWASP knowledge is essential. Kubernetes experience would be an advantage.\nThis is an onsite role.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     5,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Security"
+    ],
+    "preferred": [
+     "Kubernetes"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-18-analytics-lead",
+   "set": "heldout-a",
+   "title": "Analytics Lead",
+   "location": "Gurugram",
+   "description": "Analytics at Acme drives every decision. You will lead a team of four analysts.\nRequirements\n• 7+ years in analytics, at least 2 in a lead role\n• Tableau or Power BI\n• Advanced SQL",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     7,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "Power BI",
+     "SQL",
+     "Tableau"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-19-backend-developer",
+   "set": "heldout-a",
+   "title": "Backend Developer",
+   "location": "Kolkata",
+   "description": "Looking for a backend developer. Tech: Node.js, Express, MongoDB, Redis. Hybrid working. 2+ years experience preferred.",
+   "expected": {
+    "employment_type": null,
+    "experience": null,
+    "experience_preferred_min": 2,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-a-20-support-specialist-temp",
+   "set": "heldout-a",
+   "title": "Support Specialist (Temp)",
+   "location": "Remote - Philippines",
+   "description": "Temporary 6-week assignment covering peak season. Remote, must be based in the Philippines.\nRequirements: Zendesk experience, excellent written English.",
+   "expected": {
+    "employment_type": "temporary",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "Philippines",
+    "mandatory": [],
+    "preferred": [
+     "Communication"
+    ]
+   },
+   "known_misses": [
+    "preferred"
+   ]
+  },
+  {
+   "id": "heldout-a-21-software-engineer-infrastructure",
+   "set": "heldout-a",
+   "title": "Software Engineer, Infrastructure",
+   "location": "San Francisco, CA",
+   "description": "Hybrid — 3 days in the office.\nMinimum qualifications\n• 4+ years of software development experience\n• Experience with Python or Go\nPreferred qualifications\n• 6+ years of experience\n• Distributed systems",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     4,
+     null
+    ],
+    "experience_preferred_min": 6,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [
+     "Go",
+     "Python"
+    ],
+    "preferred": [
+     "Distributed Systems"
+    ]
+   }
+  },
+  {
+   "id": "heldout-a-22-content-strategist",
+   "set": "heldout-a",
+   "title": "Content Strategist",
+   "location": "Remote",
+   "description": "We're a fully distributed team. This is a remote role open to candidates in North America or Latin America.\nWhat you'll need\n• 3+ years of content strategy experience\n• SEO",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "North America, Latin America",
+    "mandatory": [
+     "SEO"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-01-full-stack-engineer",
+   "set": "heldout-b",
+   "title": "Full Stack Engineer",
+   "location": "Remote - LATAM",
+   "description": "Our story\nFounded in 2016, we serve 3 million users and have grown 40% every year for 5 years.\nWhat you'll do\n• Build features end to end in React and Django\nWhat you need\n• 3+ years writing production Django\n• Comfortable with PostgreSQL\nBonus\n• Experience with Celery or Redis\nWhy you'll love working here\n• Remote-first, async culture\n• Annual learning budget",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "LATAM",
+    "mandatory": [
+     "Django",
+     "PostgreSQL"
+    ],
+    "preferred": [
+     "Redis"
+    ]
+   }
+  },
+  {
+   "id": "heldout-b-02-payroll-specialist-6-month-contract",
+   "set": "heldout-b",
+   "title": "Payroll Specialist - 6 Month Contract",
+   "location": "Toronto, Canada",
+   "description": "Hybrid, with two days a week at our downtown office.\nYou bring 3 years of payroll experience and advanced Excel skills. A CPA designation is an asset.",
+   "expected": {
+    "employment_type": "contract",
+    "experience": [
+     3,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-03-junior-data-analyst",
+   "set": "heldout-b",
+   "title": "Junior Data Analyst",
+   "location": "Bengaluru",
+   "description": "Position type: Permanent\nExperience: 0-1 years\nLocation: Bengaluru (work from office)\nSkills required: SQL, Power BI, Excel\nPython would be an added advantage.",
+   "expected": {
+    "employment_type": "full_time",
+    "experience": [
+     0,
+     1
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Excel",
+     "Power BI",
+     "SQL"
+    ],
+    "preferred": [
+     "Python"
+    ]
+   }
+  },
+  {
+   "id": "heldout-b-04-technical-writer",
+   "set": "heldout-b",
+   "title": "Technical Writer",
+   "location": "Remote",
+   "description": "This is a freelance, part-time engagement (about 10 hours a week). You can work from anywhere in the world.\nYou'll document our REST APIs and SDKs.",
+   "expected": {
+    "employment_type": "freelance",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-05-site-reliability-engineer",
+   "set": "heldout-b",
+   "title": "Site Reliability Engineer",
+   "location": "Remote (EMEA)",
+   "description": "Requirements\n• Experience operating Kubernetes in production for at least 4 years\n• Prometheus and Grafana\n• Terraform\nThe team is spread across Europe; you must be based in EMEA.",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     4,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "EMEA",
+    "mandatory": [
+     "Kubernetes",
+     "Observability",
+     "Terraform"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-06-software-engineering-intern",
+   "set": "heldout-b",
+   "title": "Software Engineering Intern",
+   "location": "Pune",
+   "description": "6-month internship with a pre-placement offer for strong performers (full-time conversion possible).\nOn-site at our Pune campus.\nRequirements: Basic Java, OOP, DSA.",
+   "expected": {
+    "employment_type": "internship",
+    "experience": null,
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [
+     "Data Structures & Algorithms",
+     "Java",
+     "OOP"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-07-head-of-engineering",
+   "set": "heldout-b",
+   "title": "Head of Engineering",
+   "location": "Mumbai",
+   "description": "We have been building fintech products for 9 years. You will lead 40 engineers.\nAbout you\n• 12+ years in software engineering, including 5+ years leading teams\n• Hands-on with AWS and microservices\n• MBA preferred but not required",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     12,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": null,
+    "remote_region": null,
+    "mandatory": [
+     "AWS",
+     "Microservices"
+    ],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-08-warehouse-supervisor-temporary",
+   "set": "heldout-b",
+   "title": "Warehouse Supervisor (Temporary)",
+   "location": "Delhi",
+   "description": "Temporary cover for 4 months. Must have 2 years supervising warehouse staff. On-site role.",
+   "expected": {
+    "employment_type": "temporary",
+    "experience": [
+     2,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "onsite",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-09-android-developer",
+   "set": "heldout-b",
+   "title": "Android Developer",
+   "location": "Hyderabad",
+   "description": "Kotlin, Jetpack Compose, MVVM. 2-4 yrs exp. Immediate joiners preferred. Hybrid (3 days office).",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     2,
+     4
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "hybrid",
+    "remote_region": null,
+    "mandatory": [],
+    "preferred": []
+   }
+  },
+  {
+   "id": "heldout-b-10-ai-research-engineer",
+   "set": "heldout-b",
+   "title": "AI Research Engineer",
+   "location": "London or Remote (UK)",
+   "description": "You'll prototype LLM agents and RAG pipelines.\nMinimum qualifications\n• PhD or 4 years of research experience in NLP\n• PyTorch\nPreferred qualifications\n• Publications at top venues\n• Experience with vector databases",
+   "expected": {
+    "employment_type": null,
+    "experience": [
+     4,
+     null
+    ],
+    "experience_preferred_min": null,
+    "work_mode": "remote",
+    "remote_region": "United Kingdom",
+    "mandatory": [
+     "NLP",
+     "PyTorch"
+    ],
+    "preferred": [
+     "RAG"
+    ]
+   }
+  }
+ ]
+}

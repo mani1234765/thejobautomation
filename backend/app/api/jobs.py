@@ -60,7 +60,14 @@ class JobDetail(JobCard):
     # (policy, engine, profile, listing, untracked). Saved/applied jobs keep it until re-evaluated.
     eligibility_outdated: bool = False
     eligibility_outdated_reasons: list[str] = Field(default_factory=list)
+    # With reason "policy": which settings changed since the decision, each {key, group, before, after}.
+    eligibility_policy_changes: list[dict[str, Any]] = Field(default_factory=list)
     duplicate_of_id: str | None
+    # M3 extraction. mentioned_skills is None for jobs not re-synced since M3 (unknown, not "none").
+    mentioned_skills: list[str] | None = None
+    experience_preferred_min: float | None = None
+    remote_region: str | None = None  # informational only; never used for eligibility
+    field_evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 def to_card(job: Job, match: JobMatch | None, saved: str | None, app: Application | None = None) -> JobCard:
@@ -180,7 +187,12 @@ def _detail(db: DB, p: Principal, job: Job) -> JobDetail:
         eligibility_detail=m.eligibility if m else None,
         eligibility_outdated=bool(reasons := svc.outdated_reasons(db, p.user, job, m)),
         eligibility_outdated_reasons=reasons,
+        eligibility_policy_changes=svc.policy_changes(p.user, m) if "policy" in reasons else [],
         duplicate_of_id=job.duplicate_of_id,
+        mentioned_skills=job.mentioned_skills,
+        experience_preferred_min=job.experience_preferred_min,
+        remote_region=job.remote_region,
+        field_evidence=job.field_evidence or {},
     )
 
 

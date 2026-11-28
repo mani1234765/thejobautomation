@@ -144,27 +144,49 @@ class NormalizedJob:
     experience_min: float | None = None
     experience_max: float | None = None
     seniority: str | None = None
-    required_skills: list[str] = field(default_factory=list)
+    required_skills: list[str] = field(default_factory=list)  # mandatory
     preferred_skills: list[str] = field(default_factory=list)
+    mentioned_skills: list[str] = field(default_factory=list)  # named, but neither required nor preferred
+    experience_preferred_min: float | None = None
+    remote_region: str | None = None  # informational: where a remote role may be done from
+    # Quoted wording behind each extracted fact: {"skills": {name: {tier, term, quote, section}},
+    # "experience", "experience_preferred", "work_mode", "remote_region", "employment_type"}
+    field_evidence: dict[str, Any] = field(default_factory=dict)
 
     def enrich(self) -> NormalizedJob:
         """Derive structured facts from the description where the provider didn't supply them."""
         text = self.description_text
+        segs = jp.segments(text)
+        ev: dict[str, Any] = {}
         if self.experience_min is None:
-            self.experience_min, self.experience_max = jp.experience_range(text)
+            x = jp.experience(text, segs)
+            self.experience_min, self.experience_max = x.minimum, x.maximum
+            self.experience_preferred_min = x.preferred_minimum
+            ev["experience"], ev["experience_preferred"] = x.evidence, x.preferred_evidence
         self.seniority = jp.seniority(self.title, self.experience_min)
+        wa = jp.work_arrangement(self.location, text, segs)
         if self.work_mode is None:
-            self.work_mode = jp.work_mode(self.location, text[:1500])
+            self.work_mode, ev["work_mode"] = wa.mode, wa.evidence
+        if self.work_mode == "remote" and wa.region:
+            self.remote_region, ev["remote_region"] = wa.region, wa.region_evidence
         if self.employment_type is None:
-            self.employment_type, self.is_internship = jp.employment_type(self.title, None)
+            e = jp.detect_employment(self.title, None, text, segs)
+            self.employment_type, self.is_internship = e.value, e.is_internship
+            ev["employment_type"] = e.note + " " + (e.evidence or "") if e.note else e.evidence
         if self.salary_min is None and self.salary_max is None:
             s = jp.parse_salary_text(text)
             if s.minimum is not None:
                 # Pay found only in free text is "advertised": it has not come from a structured field.
                 self.salary_min, self.salary_max, self.salary_currency = s.minimum, s.maximum, s.currency
                 self.salary_period, self.salary_text, self.salary_disclosure = s.period, s.text, "advertised"
-        split = jp.split_skills(text)
-        self.required_skills, self.preferred_skills = split.required, split.preferred
+        split = jp.split_skills(text, segs)
+        self.required_skills, self.preferred_skills, self.mentioned_skills = (
+            split.required,
+            split.preferred,
+            split.mentioned,
+        )
+        ev["skills"] = split.evidence
+        self.field_evidence = {k: v for k, v in ev.items() if v}
         return self
 
 

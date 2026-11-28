@@ -167,24 +167,67 @@ SKILLS: tuple[SkillDef, ...] = (
 )
 
 
+# Job listings are noisier than résumés: company names ("GitLab"), boilerplate ("our leadership team",
+# "the rest of the team", "security is in our DNA") and verbs ("excel at", "react quickly"). In listings these
+# forms are not read as skills (LISTING_IGNORED) or are read only in their capitalised form
+# (LISTING_CASE_SENSITIVE). What a user types is still canonicalised with every alias, so profiles don't change.
+LISTING_IGNORED: dict[str, tuple[str, ...]] = {
+    "Git": ("github", "gitlab"),
+    "Data Analysis": ("analytics",),
+    "REST APIs": ("rest",),
+    "Technical Writing": ("documentation",),
+    "Security": ("security",),
+    "Communication": ("communication",),
+    "Leadership": ("leadership",),
+    "Excel": ("excel",),
+    "React": ("react",),
+    "Swift": ("swift",),
+    "Spring": ("spring",),
+    "Express": ("express",),
+    "Spark": ("spark",),
+    "Node.js": ("node",),
+    "RAG": ("rag",),
+}
+LISTING_CASE_SENSITIVE: dict[str, tuple[str, ...]] = {
+    "Excel": ("Excel",),
+    "React": ("React",),
+    "Swift": ("Swift",),
+    "Spring": ("Spring",),
+    "Express": ("Express",),
+    "Spark": ("Spark",),
+    "Node.js": ("Node",),
+    "REST APIs": ("REST",),
+    "RAG": ("RAG",),
+}
+
+
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+def _cs_pattern(a: str) -> re.Pattern[str]:
+    # Case-sensitive and not followed by words that make it ambiguous ("Go to", "R&D").
+    return re.compile(r"(?<![\w+#./-])" + re.escape(a) + r"(?![\w+#&/-]| to\b| ahead\b)")
+
+
 @lru_cache
-def _index() -> tuple[dict[str, SkillDef], dict[str, SkillDef], list[tuple[re.Pattern[str], SkillDef]]]:
+def _index(
+    listing: bool = False,
+) -> tuple[dict[str, SkillDef], dict[str, SkillDef], list[tuple[re.Pattern[str], SkillDef]]]:
     by_name = {_norm(s.name): s for s in SKILLS}
     alias: dict[str, SkillDef] = dict(by_name)
     patterns: list[tuple[re.Pattern[str], SkillDef]] = []
     for s in SKILLS:
+        ignored = {_norm(a) for a in LISTING_IGNORED.get(s.name, ())} if listing else set()
         for a in (s.name, *s.aliases):
             if s.case_sensitive_aliases and a == s.name:
                 continue  # ambiguous names are matched only via case-sensitive rules below
             alias[_norm(a)] = s
+            if _norm(a) in ignored:
+                continue
             patterns.append((re.compile(r"(?<![\w+#.])" + re.escape(a) + r"(?![\w+#])", re.IGNORECASE), s))
-        for a in s.case_sensitive_aliases:
-            # Case-sensitive and not followed by words that make it ambiguous ("Go to", "R&D").
-            patterns.append((re.compile(r"(?<![\w+#./-])" + re.escape(a) + r"(?![\w+#&/-]| to\b| ahead\b)"), s))
+        cs = (*s.case_sensitive_aliases, *(LISTING_CASE_SENSITIVE.get(s.name, ()) if listing else ()))
+        patterns.extend((_cs_pattern(a), s) for a in dict.fromkeys(cs))
     # Longer aliases first so "react native" wins over "react".
     patterns.sort(key=lambda p: -len(p[0].pattern))
     return by_name, alias, patterns
@@ -219,19 +262,36 @@ def related(a: str, b: str) -> bool:
     return sb.name in sa.related or sa.name in sb.related
 
 
-def extract_skills(text: str) -> dict[str, list[str]]:
-    """Find taxonomy skills in free text. Returns canonical name → evidence snippets."""
-    _, _, patterns = _index()
-    found: dict[str, list[str]] = {}
+@dataclass(frozen=True)
+class SkillHit:
+    name: str  # canonical
+    term: str  # the wording as written
+    start: int
+    end: int
+
+
+def find_skills(text: str, *, listing: bool = False) -> list[SkillHit]:
+    """Every taxonomy skill mention in a text (longest alias first, overlaps dropped). `listing=True` applies
+    the stricter job-listing rules."""
+    _, _, patterns = _index(listing)
+    hits: list[SkillHit] = []
     consumed: list[tuple[int, int]] = []
     for pattern, skill in patterns:
         for m in pattern.finditer(text):
             if any(s <= m.start() < e or s < m.end() <= e for s, e in consumed):
                 continue
             consumed.append((m.start(), m.end()))
-            lo, hi = max(0, m.start() - 60), min(len(text), m.end() + 60)
-            snippet = re.sub(r"\s+", " ", text[lo:hi]).strip()
-            ev = found.setdefault(skill.name, [])
-            if len(ev) < 3:
-                ev.append(snippet)
+            hits.append(SkillHit(skill.name, m.group(0), m.start(), m.end()))
+    return hits
+
+
+def extract_skills(text: str, *, listing: bool = False) -> dict[str, list[str]]:
+    """Find taxonomy skills in free text. Returns canonical name → evidence snippets."""
+    found: dict[str, list[str]] = {}
+    for h in find_skills(text, listing=listing):
+        lo, hi = max(0, h.start - 60), min(len(text), h.end + 60)
+        snippet = re.sub(r"\s+", " ", text[lo:hi]).strip()
+        ev = found.setdefault(h.name, [])
+        if len(ev) < 3:
+            ev.append(snippet)
     return found

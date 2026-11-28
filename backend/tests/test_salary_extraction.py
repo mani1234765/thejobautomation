@@ -213,7 +213,7 @@ def test_engine_update_marks_saved_decisions_outdated_without_recomputing(user_a
     user_api.put(f"{V}/jobs/{saved}/state", json={"state": "saved"})
     before = user_api.get(f"{V}/jobs/{saved}").json()["eligibility_detail"]
     other_before = user_api.get(f"{V}/jobs/{ids['Data Engineer']}").json()["eligibility_detail"]["evaluated_at"]
-    assert before["inputs"]["engine"] == matching.SCORING_VERSION == "2026.11.4"
+    assert before["inputs"]["engine"] == matching.SCORING_VERSION == "2026.11.5"
 
     monkeypatch.setattr(matching, "SCORING_VERSION", "2099.1.1")
     monkeypatch.setattr(jobs_svc, "SCORING_VERSION", "2099.1.1")

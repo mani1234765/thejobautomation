@@ -1,20 +1,20 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Download, KeyRound, LogOut, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Download, KeyRound, LogOut, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "@/lib/toast";
 import { ProfileEditor } from "@/components/settings/profile-editor";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Switch, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/controls";
+import { Checkbox, Segmented, Switch, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/controls";
 import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/overlay";
-import { Badge, Card, CardHeader, Field, Input, Skeleton } from "@/components/ui/primitives";
+import { Badge, Card, CardHeader, Field, Input, NativeSelect, Skeleton } from "@/components/ui/primitives";
 import { Callout, PageHeader } from "@/components/ui/states";
 import { api } from "@/lib/api";
 import { cn, formatDateTime, relativeTime } from "@/lib/format";
 import { keys, useAction, useAiStatus, useMe, useSettings, useTokens } from "@/lib/queries";
-import type { ApiToken, Settings } from "@/lib/types";
+import { APPRENTICE_CURRENCIES, type ApiToken, type Settings } from "@/lib/types";
 
 function Row({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -89,7 +89,39 @@ function Policies() {
         <Row title="Minimum monthly stipend" description="Leave empty for no minimum.">
           <div className="flex items-center gap-2"><span className="text-xs text-fg-muted">₹</span><Input type="number" min={0} className="w-28" aria-label="Minimum monthly stipend in rupees" value={d.min_stipend_monthly_inr ?? ""} onChange={(e) => set("min_stipend_monthly_inr", e.target.value === "" ? null : Number(e.target.value))} /><span className="text-xs text-fg-muted">/ month</span></div>
         </Row>
-        <Row title="Allow internships with undisclosed stipend"><Switch aria-label="Allow internships with undisclosed stipend" checked={d.allow_undisclosed_stipend} onCheckedChange={(v) => set("allow_undisclosed_stipend", v)} /></Row>
+        <Row title="Allow internships with undisclosed stipend" description="Also applies to apprenticeships whose listing calls the pay a stipend."><Switch aria-label="Allow internships with undisclosed stipend" checked={d.allow_undisclosed_stipend} onCheckedChange={(v) => set("allow_undisclosed_stipend", v)} /></Row>
+      </Card>
+      <Card>
+        <CardHeader title="Apprenticeship stipend policy"
+          description="Used only when an apprenticeship listing calls its pay a stipend. Pay called a salary, CTC or wages uses your salary threshold; pay that isn't called either needs your review." />
+        <Row title="Minimum stipend" description="Leave empty for no minimum. A stipend that meets or exceeds it passes.">
+          <div className="flex items-center gap-2">
+            <NativeSelect aria-label="Apprenticeship stipend currency" className="w-20" value={d.apprentice_stipend_currency ?? ""}
+              onChange={(e) => set("apprentice_stipend_currency", e.target.value as Settings["apprentice_stipend_currency"])}>
+              {d.apprentice_stipend_currency == null && <option value="" disabled>Choose…</option>}
+              {APPRENTICE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </NativeSelect>
+            <Input type="number" min={0} className="w-28" aria-label="Minimum apprenticeship stipend" value={d.apprentice_min_stipend ?? ""}
+              onChange={(e) => set("apprentice_min_stipend", e.target.value === "" ? null : Number(e.target.value))} />
+            <NativeSelect aria-label="Apprenticeship stipend period" className="w-28" value={d.apprentice_stipend_period}
+              onChange={(e) => set("apprentice_stipend_period", e.target.value as Settings["apprentice_stipend_period"])}>
+              <option value="month">per month</option><option value="year">per year</option>
+            </NativeSelect>
+          </div>
+        </Row>
+        {d.apprentice_stipend_currency == null && (
+          <div className="px-4 pb-3"><Callout tone="warning" icon={AlertTriangle}>The saved currency isn&apos;t valid, so the minimum can&apos;t be compared. Choose a currency and save.</Callout></div>
+        )}
+        <Row title="Stipends stated only in the description" description="Advertised amounts are never shown as employer-verified.">
+          <Segmented ariaLabel="Stipends stated only in the description" value={d.apprentice_advertised_stipend}
+            onChange={(v) => set("apprentice_advertised_stipend", v)}
+            options={[{ value: "compare", label: "Compare with minimum" }, { value: "review", label: "Always review" }]} />
+        </Row>
+        <Row title="Unverified stipend that meets the minimum" description="Below the minimum is rejected either way.">
+          <Segmented ariaLabel="Unverified stipend that meets the minimum" value={d.apprentice_unverified_outcome}
+            onChange={(v) => set("apprentice_unverified_outcome", v)}
+            options={[{ value: "pass", label: "Pass (marked unverified)" }, { value: "review", label: "Needs review" }]} />
+        </Row>
       </Card>
       <Card>
         <CardHeader title="Applications" />

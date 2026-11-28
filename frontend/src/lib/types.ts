@@ -10,7 +10,8 @@ export interface Me {
 
 export type WorkMode = "remote" | "hybrid" | "onsite";
 export type ExperienceLevel = "fresher" | "internship" | "0-1" | "1-2" | "2-3" | "3-5" | "5+";
-export type EmploymentType = "full_time" | "part_time" | "contract" | "internship";
+export type EmploymentType =
+  | "full_time" | "part_time" | "contract" | "internship" | "freelance" | "temporary" | "apprenticeship";
 
 export interface Profile {
   full_name: string | null;
@@ -124,6 +125,14 @@ export interface Settings {
   notify_whatsapp: boolean;
   whatsapp_number: string | null;
   daily_summary: boolean;
+  /** Apprenticeship stipend policy. null minimum = no minimum. A null currency means a stored value was invalid. */
+  apprentice_min_stipend: number | null;
+  apprentice_stipend_currency: ApprenticeCurrency | null;
+  apprentice_stipend_period: "month" | "year";
+  /** compare: judge description-only stipends against the minimum (labelled unverified) · review: always review */
+  apprentice_advertised_stipend: "compare" | "review";
+  /** What happens when an advertised (unverified) stipend meets the minimum. */
+  apprentice_unverified_outcome: "pass" | "review";
   /** Stored values that were out of range and are shown/applied as the nearest valid value. */
   normalized?: { field: string; stored: unknown; effective: unknown; reason: string }[];
 }
@@ -149,12 +158,33 @@ export interface MatchBreakdown {
 }
 
 export interface EligibilityCheck {
-  rule: "SALARY" | "STIPEND" | "SKILLS" | "EXPERIENCE" | "SENIORITY" | "LOCATION" | "EMPLOYMENT";
+  rule: "SALARY" | "STIPEND" | "COMPENSATION" | "SKILLS" | "EXPERIENCE" | "SENIORITY" | "LOCATION" | "EMPLOYMENT";
   outcome: "pass" | "reject" | "review" | "unknown";
   code: string;
   explanation: string;
   evidence: string[];
   missing: string[];
+  /** Apprenticeship pay decisions only: what was found and which policy was applied. */
+  details?: CompensationDetails | Record<string, never>;
+}
+
+export const APPRENTICE_CURRENCIES = ["INR", "USD", "EUR", "GBP", "CAD", "AUD", "SGD", "PLN"] as const;
+export type ApprenticeCurrency = (typeof APPRENTICE_CURRENCIES)[number];
+
+export interface CompensationDetails {
+  employment_type: "apprenticeship";
+  compensation_type: "stipend" | "salary" | "salary and stipend" | "not stated";
+  amount_min: number | null;
+  amount_max: number | null;
+  currency: string | null;
+  currency_identified: boolean;
+  period: string | null;
+  source: "structured field" | "job description" | null;
+  verification: "EMPLOYER_VERIFIED" | "ADVERTISED_UNVERIFIED" | "NOT_DISCLOSED";
+  wording_quote: string | null;
+  pay_quote: string | null;
+  policy: Record<string, string | number | boolean | null>;
+  reason_code: string;
 }
 
 export interface EligibilityPolicy {
@@ -224,7 +254,40 @@ export interface JobDetail extends JobCard {
   eligibility_detail: Eligibility | null;
   eligibility_outdated: boolean;
   eligibility_outdated_reasons?: ("policy" | "engine" | "profile" | "listing" | "untracked")[];
+  /** With reason "policy": the settings that changed since the decision was made. */
+  eligibility_policy_changes?: PolicyChange[];
   duplicate_of_id: string | null;
+  /** null until the job's board is synced again after the extraction update (unknown, not "none"). */
+  mentioned_skills?: string[] | null;
+  experience_preferred_min?: number | null;
+  /** Where a remote role may be done from. Informational: never used for eligibility. */
+  remote_region?: string | null;
+  field_evidence?: FieldEvidence;
+}
+
+export interface PolicyChange {
+  key: string;
+  /** stipend = internship stipend settings (the undisclosed-stipend switch also covers apprenticeships). */
+  group: "salary" | "stipend" | "apprenticeship";
+  before: string | number | boolean | null;
+  after: string | number | boolean | null;
+}
+
+export interface SkillEvidence {
+  tier: "mandatory" | "preferred" | "mentioned";
+  term: string;
+  quote: string;
+  section: string | null;
+}
+
+/** The listing's own words behind each extracted fact. */
+export interface FieldEvidence {
+  skills?: Record<string, SkillEvidence>;
+  experience?: string;
+  experience_preferred?: string;
+  work_mode?: string;
+  remote_region?: string;
+  employment_type?: string;
 }
 
 export interface JobPage {

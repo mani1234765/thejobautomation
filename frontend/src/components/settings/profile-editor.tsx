@@ -8,7 +8,7 @@ import { Dialog, DialogContent, Tooltip } from "@/components/ui/overlay";
 import { Badge, Card, CardHeader, Field, Input, NativeSelect, Progress, Skeleton, Textarea } from "@/components/ui/primitives";
 import { Callout } from "@/components/ui/states";
 import { api } from "@/lib/api";
-import { EXPERIENCE_LEVELS, formatDate } from "@/lib/format";
+import { EMPLOYMENT_OPTIONS, EXPERIENCE_LEVELS, formatDate } from "@/lib/format";
 import { keys, useAction, useProfile } from "@/lib/queries";
 import type { Education, Experience, Profile, Project } from "@/lib/types";
 
@@ -40,7 +40,7 @@ function BasicsForm({ profile }: { profile: Profile }) {
         <Field label="Target job titles" className="sm:col-span-2"><TagInput value={d.target_titles} onChange={(v) => set("target_titles", v)} /></Field>
         <Field label="Preferred locations" className="sm:col-span-2"><TagInput value={d.preferred_locations} onChange={(v) => set("preferred_locations", v)} /></Field>
         <Field label="Work modes"><ChipGroup ariaLabel="Work modes" value={d.work_modes} onChange={(v) => set("work_modes", v)} options={[{ value: "remote", label: "Remote" }, { value: "hybrid", label: "Hybrid" }, { value: "onsite", label: "On-site" }]} /></Field>
-        <Field label="Employment types"><ChipGroup ariaLabel="Employment types" value={d.employment_types} onChange={(v) => set("employment_types", v)} options={[{ value: "full_time", label: "Full-time" }, { value: "internship", label: "Internship" }, { value: "contract", label: "Contract" }, { value: "part_time", label: "Part-time" }]} /></Field>
+        <Field label="Employment types"><ChipGroup ariaLabel="Employment types" value={d.employment_types} onChange={(v) => set("employment_types", v)} options={EMPLOYMENT_OPTIONS} /></Field>
         <Field label="Experience levels" className="sm:col-span-2"><ChipGroup ariaLabel="Experience levels" value={d.experience_levels} onChange={(v) => set("experience_levels", v)} options={EXPERIENCE_LEVELS} /></Field>
         <Field label="Summary" className="sm:col-span-2" optional><Textarea rows={3} value={d.summary ?? ""} onChange={(e) => set("summary", e.target.value)} /></Field>
         <Field label="Career objectives" className="sm:col-span-2" optional><Textarea rows={2} value={d.career_objectives ?? ""} onChange={(e) => set("career_objectives", e.target.value)} /></Field>

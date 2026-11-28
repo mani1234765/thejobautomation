@@ -15,11 +15,16 @@ Same inputs + same SCORING_VERSION ⇒ same score.
 | factor      | weight | how it is scored                                                    |
 |-------------|--------|---------------------------------------------------------------------|
 | skills      | 45     | required skills: exact = 1, related = 0.5; preferred add up to +15% |
+|             |        | (skills a listing only *mentions* never count here; see below)      |
 | experience  | 20     | within range = 1; each year short −0.3; >4y over max = 0.7          |
 | role        | 15     | best token overlap between job title and target/past titles         |
 | location    | 10     | work-mode and city preference                                       |
 | level       | 5      | job seniority vs. chosen experience levels                          |
-| employment  | 5      | internship / full-time / contract preference                        |
+| employment  | 5      | employment-type preference (seven types)                            |
+
+Skills a listing only mentions (outside its requirements, with no "required"/"a plus" wording) add a small
+bonus of up to MENTIONED_BONUS points to the final score, in proportion to how many you have. They never
+affect the skills factor, missing-skill lists or eligibility.
 """
 
 from __future__ import annotations
@@ -30,12 +35,16 @@ import re
 from dataclasses import asdict, dataclass, field
 
 from app.domain import fx, taxonomy
-from app.domain.eligibility import evaluate_job
+from app.domain.eligibility import employment_restricted, evaluate_job
 from app.domain.job_parsing import normalize_title
 from app.domain.locations import mentions_city
 from app.domain.salary_policy import SalaryFacts, SalaryPolicy
 
-SCORING_VERSION = "2026.11.4"  # .4: salary extraction (periods never assumed) and structured-vs-description conflicts
+# .4: salary extraction (periods never assumed) and structured-vs-description conflicts
+# .5: section-aware skills (mandatory / preferred / mentioned), seven employment types, preferred vs mandatory
+#     experience, work-arrangement negation, apprenticeship pay judged by its stated kind (M3)
+SCORING_VERSION = "2026.11.5"
+MENTIONED_BONUS = 3
 NEUTRAL = 50.0
 WEIGHTS = {"skills": 45, "experience": 20, "role": 15, "location": 10, "level": 5, "employment": 5}
 
@@ -60,7 +69,7 @@ class CandidateProfile:
     preferred_locations: list[str]
     work_modes: list[str]
     experience_levels: list[str]
-    employment_types: list[str]  # full_time | internship | contract | part_time
+    employment_types: list[str]  # see job_parsing.EMPLOYMENT_TYPES
 
     def digest(self) -> str:
         return hashlib.sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()
@@ -80,6 +89,7 @@ class JobFacts:
     is_internship: bool
     salary: SalaryFacts
     description: str = ""  # plain-text listing, used to quote evidence
+    mentioned_skills: list[str] = field(default_factory=list)  # named, but neither required nor preferred
 
 
 @dataclass
@@ -101,6 +111,7 @@ class MatchResult:
     unknown_factors: list[str]
     strengths: list[str]
     concerns: list[str]
+    mentioned_matched: list[str] = field(default_factory=list)
     eligibility: dict = field(default_factory=dict)
     scoring_version: str = SCORING_VERSION
 
@@ -241,7 +252,7 @@ def _employment_factor(job: JobFacts, cand: CandidateProfile) -> Factor:
     et = "internship" if job.is_internship else job.employment_type
     if et is None:
         return Factor("employment", w, None, "Employment type not stated.")
-    ok = et in cand.employment_types
+    ok = et in cand.employment_types or not employment_restricted(cand.employment_types)
     return Factor(
         "employment",
         w,
@@ -268,6 +279,9 @@ def compute_match(
     confidence = round(total_w / sum(WEIGHTS.values()), 2)
     known_score = 100 * sum(f.weight * f.score for f in known) / total_w if total_w else NEUTRAL  # type: ignore[operator]
     score = round(known_score * confidence + NEUTRAL * (1 - confidence))
+    mentioned_hits = [s for s in job.mentioned_skills if s in cand.skills]
+    if mentioned_hits:
+        score = min(100, score + round(MENTIONED_BONUS * len(mentioned_hits) / len(job.mentioned_skills)))
 
     strengths = [f.summary for f in known if f.score is not None and f.score >= 0.8]
     concerns = [f.summary for f in known if f.score is not None and f.score < 0.5]
@@ -280,7 +294,7 @@ def compute_match(
     verdict = evaluate_job(
         job, cand, policy, matched=matched, related=related, missing_required=missing_req, fxc=fxc
     ).as_dict()
-    salary = next(c for c in verdict["checks"] if c["rule"] in ("SALARY", "STIPEND"))
+    salary = next(c for c in verdict["checks"] if c["rule"] in ("SALARY", "STIPEND", "COMPENSATION"))
     return MatchResult(
         score=score,
         factors=factors,
@@ -289,6 +303,7 @@ def compute_match(
         missing_required=missing_req,
         missing_preferred=missing_pref,
         unknown_factors=[f.key for f in factors if f.score is None],
+        mentioned_matched=mentioned_hits,
         strengths=strengths,
         concerns=concerns,
         eligibility={

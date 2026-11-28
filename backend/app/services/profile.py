@@ -62,6 +62,11 @@ def salary_policy(user: User) -> SalaryPolicy:
         allow_undisclosed_salary=v["allow_undisclosed_salary"],
         min_stipend_monthly_inr=v["min_stipend_monthly_inr"],
         allow_undisclosed_stipend=v["allow_undisclosed_stipend"],
+        apprentice_min_stipend=v["apprentice_min_stipend"],
+        apprentice_stipend_currency=v["apprentice_stipend_currency"],
+        apprentice_stipend_period=v["apprentice_stipend_period"],
+        apprentice_advertised_stipend=v["apprentice_advertised_stipend"],
+        apprentice_unverified_outcome=v["apprentice_unverified_outcome"],
     )
 
 

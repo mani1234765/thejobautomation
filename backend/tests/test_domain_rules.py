@@ -67,7 +67,7 @@ def test_state_machine_blocks_skipping_approval():
 def test_experience_extraction():
     assert jp.experience_range("We need 3-5 years of experience in Python") == (3, 5)
     assert jp.experience_range("Minimum 2+ years of professional experience") == (2, None)
-    assert jp.experience_range("Freshers welcome! Entry-level role") == (0, 1)
+    assert jp.experience_range("Freshers welcome! Entry-level role") == (0, None)  # M3: no maximum implied
     assert jp.experience_range("Join our team") == (None, None)
 
 

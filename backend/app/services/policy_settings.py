@@ -14,7 +14,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.domain.salary_policy import DEFAULT_MIN_CTC_LPA, MAX_DAILY_APPLICATIONS, MAX_MIN_CTC_LPA
+from app.domain.salary_policy import (
+    APPRENTICE_CURRENCIES,
+    APPRENTICE_DEFAULTS,
+    DEFAULT_MIN_CTC_LPA,
+    MAX_APPRENTICE_STIPEND,
+    MAX_DAILY_APPLICATIONS,
+    MAX_MIN_CTC_LPA,
+)
 from app.models import UserSettings
 
 log = logging.getLogger(__name__)
@@ -49,6 +56,7 @@ def effective(s: UserSettings) -> Effective:
             "notify_whatsapp": s.notify_whatsapp,
             "whatsapp_number": s.whatsapp_number,
             "daily_summary": s.daily_summary,
+            **{k: getattr(s, k) for k in APPRENTICE_DEFAULTS},
         }
     )
     v = out.values
@@ -84,6 +92,26 @@ def effective(s: UserSettings) -> Effective:
             fix("min_stipend_monthly_inr", 0.0, "below 0")
         elif st > 1_000_000:
             fix("min_stipend_monthly_inr", 1_000_000.0, "above the maximum")
+
+    appr = v["apprentice_min_stipend"]
+    if appr is not None:
+        a = _num(appr)
+        if a is None:
+            fix("apprentice_min_stipend", None, "not a valid number; no minimum applied")
+        elif a < 0:
+            fix("apprentice_min_stipend", 0.0, "below 0")
+        elif a > MAX_APPRENTICE_STIPEND:
+            fix("apprentice_min_stipend", MAX_APPRENTICE_STIPEND, "above the maximum")
+    if v["apprentice_stipend_currency"] not in APPRENTICE_CURRENCIES:
+        # Never replaced by a guessed currency: the minimum can't be compared until the user picks one.
+        fix("apprentice_stipend_currency", None, "not a supported currency; choose one in Settings")
+    for name, allowed in (
+        ("apprentice_stipend_period", ("month", "year")),
+        ("apprentice_advertised_stipend", ("compare", "review")),
+        ("apprentice_unverified_outcome", ("pass", "review")),
+    ):
+        if v[name] not in allowed:
+            fix(name, APPRENTICE_DEFAULTS[name], "not a valid choice; using the default")
 
     score = _num(v["min_match_score"])
     if score is None or score != int(score):

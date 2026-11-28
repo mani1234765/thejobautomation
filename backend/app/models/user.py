@@ -70,6 +70,13 @@ class UserSettings(IdMixin, TimestampMixin, Base):
     # Internship stipend policy is separate from full-time CTC.
     min_stipend_monthly_inr: Mapped[float | None] = mapped_column(Float)
     allow_undisclosed_stipend: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Apprenticeship stipend policy (see salary_policy.evaluate_apprentice_stipend): a minimum in the chosen
+    # currency and period, and how stipends that are only advertised in the description are treated.
+    apprentice_min_stipend: Mapped[float | None] = mapped_column(Float)
+    apprentice_stipend_currency: Mapped[str] = mapped_column(String(3), default="INR", server_default="INR")
+    apprentice_stipend_period: Mapped[str] = mapped_column(String(5), default="month", server_default="month")
+    apprentice_advertised_stipend: Mapped[str] = mapped_column(String(8), default="compare", server_default="compare")
+    apprentice_unverified_outcome: Mapped[str] = mapped_column(String(6), default="pass", server_default="pass")
     daily_application_limit: Mapped[int] = mapped_column(Integer, default=MAX_DAILY_APPLICATIONS)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     min_match_score: Mapped[int] = mapped_column(Integer, default=55)

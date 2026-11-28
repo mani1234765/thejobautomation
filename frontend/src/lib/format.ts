@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { AppStatus, JobCard } from "./types";
+import type { AppStatus, EmploymentType, JobCard, PolicyChange } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -95,7 +95,46 @@ export function scoreTone(score: number | null | undefined): Tone {
 export const WORK_MODE_LABEL: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
 export const EMPLOYMENT_LABEL: Record<string, string> = {
   full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship",
+  freelance: "Freelance", temporary: "Temporary", apprenticeship: "Apprenticeship",
 };
+/** Every employment type a user can prefer, in display order. */
+export const EMPLOYMENT_OPTIONS = (Object.keys(EMPLOYMENT_LABEL) as EmploymentType[]).map((value) => ({
+  value, label: EMPLOYMENT_LABEL[value],
+}));
+/** Settings-page names for each eligibility setting, used to explain why a decision is outdated. */
+export const POLICY_SETTING: Record<string, string> = {
+  min_ctc_lpa: "Minimum annual CTC", allow_undisclosed_salary: "Allow undisclosed salary",
+  min_stipend_monthly_inr: "Minimum monthly stipend",
+  allow_undisclosed_stipend: "Allow undisclosed stipend (internships and apprenticeships)",
+  apprentice_min_stipend: "Minimum stipend", apprentice_stipend_currency: "Stipend currency",
+  apprentice_stipend_period: "Stipend period", apprentice_advertised_stipend: "Stipends stated only in the description",
+  apprentice_unverified_outcome: "Unverified stipend that meets the minimum",
+};
+export const POLICY_GROUP_LABEL: Record<PolicyChange["group"], string> = {
+  salary: "Full-time salary policy", stipend: "Internship stipend policy", apprenticeship: "Apprenticeship stipend policy",
+};
+const POLICY_CHOICE: Record<string, string> = {
+  month: "per month", year: "per year", compare: "compare with minimum", review: "needs review", pass: "pass (marked unverified)",
+};
+
+/** A stored or current eligibility setting, as the user would recognise it from Settings. */
+export function formatPolicyValue(key: string, v: PolicyChange["before"]): string {
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (v == null) return key === "apprentice_stipend_currency" ? "not set" : key.startsWith("allow_") ? "not recorded" : "no minimum";
+  if (key === "min_ctc_lpa") return `₹${v} LPA`;
+  if (key === "min_stipend_monthly_inr") return `₹${Number(v).toLocaleString("en-IN")}/month`;
+  if (key === "apprentice_advertised_stipend" && v === "review") return "always review";
+  if (typeof v === "number") return v.toLocaleString("en-IN");
+  return POLICY_CHOICE[v] ?? v;
+}
+
+/** Changed settings grouped by Settings card, in the order the cards appear. */
+export function groupPolicyChanges(changes: PolicyChange[]): { group: PolicyChange["group"]; label: string; changes: PolicyChange[] }[] {
+  return (Object.keys(POLICY_GROUP_LABEL) as PolicyChange["group"][])
+    .map((group) => ({ group, label: POLICY_GROUP_LABEL[group], changes: changes.filter((c) => c.group === group) }))
+    .filter((g) => g.changes.length > 0);
+}
+
 export const EXPERIENCE_LEVELS = [
   { value: "fresher", label: "Fresher" },
   { value: "internship", label: "Internship" },

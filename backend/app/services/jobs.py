@@ -14,7 +14,7 @@ from app.db import utcnow
 from app.domain import fx
 from app.domain import job_parsing as jp
 from app.domain.matching import SCORING_VERSION, JobFacts, compute_match
-from app.domain.salary_policy import SalaryFacts
+from app.domain.salary_policy import APPRENTICE_DEFAULTS, SalaryFacts
 from app.integrations.sources.base import FetchResult, NormalizedJob, SourceError, safe_url
 from app.integrations.sources.providers import get_adapter
 from app.models import Application, Company, Job, JobMatch, JobSource, SavedJob, User
@@ -88,6 +88,8 @@ def _apply(job: Job, n: NormalizedJob) -> None:
         "seniority",
         "experience_min",
         "experience_max",
+        "experience_preferred_min",
+        "remote_region",
         "salary_min",
         "salary_max",
         "salary_currency",
@@ -98,6 +100,8 @@ def _apply(job: Job, n: NormalizedJob) -> None:
         "description_html",
         "required_skills",
         "preferred_skills",
+        "mentioned_skills",
+        "field_evidence",
         "url",
         "apply_url",
         "posted_at",
@@ -268,6 +272,7 @@ def job_facts(job: Job) -> JobFacts:
             text=job.salary_text,
         ),
         description=job.description_text or "",
+        mentioned_skills=job.mentioned_skills or [],
     )
 
 
@@ -301,6 +306,7 @@ def policy_snapshot(user: User, fxc: fx.FxContext | None = None) -> dict[str, An
         "allow_undisclosed_salary": p.allow_undisclosed_salary,
         "min_stipend_monthly_inr": p.min_stipend_monthly_inr,
         "allow_undisclosed_stipend": p.allow_undisclosed_stipend,
+        **{k: getattr(p, k) for k in APPRENTICE_DEFAULTS},
         "engine": SCORING_VERSION,
     }
     table = fxc.table if fxc else None
@@ -313,13 +319,55 @@ def _policy_key(snap: dict[str, Any] | None) -> str | None:
     version (tracked separately as the "engine" input) are excluded."""
     if not snap:
         return None
-    core = {k: v for k, v in snap.items() if k not in ("fx", "engine")}
+    # Apprenticeship settings (M3) count only once changed from their defaults, so adding them doesn't report
+    # every stored decision as "your eligibility settings changed".
+    core = {
+        k: v
+        for k, v in snap.items()
+        if k not in ("fx", "engine") and not (k in APPRENTICE_DEFAULTS and v == APPRENTICE_DEFAULTS[k])
+    }
     return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+
+
+# Which settings group each policy key belongs to, for explaining "your eligibility settings changed".
+# allow_undisclosed_stipend is shared: it decides undisclosed pay for internships and apprenticeships.
+POLICY_GROUPS: dict[str, str] = {
+    "min_ctc_lpa": "salary",
+    "allow_undisclosed_salary": "salary",
+    "min_stipend_monthly_inr": "stipend",
+    "allow_undisclosed_stipend": "stipend",
+    **{k: "apprenticeship" for k in APPRENTICE_DEFAULTS},
+}
+
+
+def policy_changes(user: User, match: JobMatch | None) -> list[dict[str, Any]]:
+    """The eligibility settings that differ between a stored decision and the user's current settings, as
+    {key, group, before, after}. Keys missing from an older snapshot count as their defaults, matching
+    `_policy_key`, so this lists exactly what makes the "policy" input differ."""
+    stored = (match.eligibility or {}).get("policy") if match else None
+    if not stored:
+        return []
+    now = policy_snapshot(user)
+    out = []
+    for key, group in POLICY_GROUPS.items():
+        before = stored.get(key, APPRENTICE_DEFAULTS.get(key))
+        if before != now.get(key):
+            out.append({"key": key, "group": group, "before": before, "after": now.get(key)})
+    return out
+
+
+# Facts added after decisions were first stored. Left out of the digest while empty, so adding a fact doesn't by
+# itself report every stored decision as "the job listing changed"; the engine version covers that change.
+_DIGEST_OPTIONAL = ("mentioned_skills",)
 
 
 def _facts_digest(job: Job) -> str:
     """Identity of everything about the listing that the decision depends on."""
-    return hashlib.sha256(json.dumps(asdict(job_facts(job)), sort_keys=True, default=str).encode()).hexdigest()
+    facts = asdict(job_facts(job))
+    for key in _DIGEST_OPTIONAL:
+        if not facts[key]:
+            del facts[key]
+    return hashlib.sha256(json.dumps(facts, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def _inputs(cand_digest: str, job: Job, pkey: str | None) -> dict[str, str | None]:

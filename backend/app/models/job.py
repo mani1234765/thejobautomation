@@ -64,11 +64,14 @@ class Job(IdMixin, TimestampMixin, Base):
     department: Mapped[str | None] = mapped_column(String(200))
     location: Mapped[str | None] = mapped_column(String(300))
     work_mode: Mapped[str | None] = mapped_column(String(10))  # remote | hybrid | onsite
-    employment_type: Mapped[str | None] = mapped_column(String(20))  # full_time | part_time | contract | internship
+    remote_region: Mapped[str | None] = mapped_column(String(120))  # informational: where a remote role may be done
+    # full_time | part_time | contract | internship | freelance | temporary | apprenticeship
+    employment_type: Mapped[str | None] = mapped_column(String(20))
     is_internship: Mapped[bool] = mapped_column(Boolean, default=False)
     seniority: Mapped[str | None] = mapped_column(String(20))
     experience_min: Mapped[float | None] = mapped_column(Float)
     experience_max: Mapped[float | None] = mapped_column(Float)
+    experience_preferred_min: Mapped[float | None] = mapped_column(Float)  # "3+ years preferred": not a requirement
     salary_min: Mapped[float | None] = mapped_column(Float)
     salary_max: Mapped[float | None] = mapped_column(Float)
     salary_currency: Mapped[str | None] = mapped_column(String(3))
@@ -77,8 +80,11 @@ class Job(IdMixin, TimestampMixin, Base):
     salary_text: Mapped[str | None] = mapped_column(String(300))
     description_text: Mapped[str] = mapped_column(Text, default="")
     description_html: Mapped[str | None] = mapped_column(Text)
-    required_skills: Mapped[list[str]] = mapped_column(JSON, default=list)
+    required_skills: Mapped[list[str]] = mapped_column(JSON, default=list)  # mandatory
     preferred_skills: Mapped[list[str]] = mapped_column(JSON, default=list)
+    mentioned_skills: Mapped[list[str] | None] = mapped_column(JSON)  # NULL until the job is next synced
+    # Quoted wording behind each extracted fact (skills with tier and term, experience, work mode, region, type).
+    field_evidence: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     url: Mapped[str] = mapped_column(String(600))
     apply_url: Mapped[str | None] = mapped_column(String(600))
     posted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), index=True)

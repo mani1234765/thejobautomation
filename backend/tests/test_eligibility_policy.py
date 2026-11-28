@@ -243,10 +243,18 @@ def test_experience_rules_and_conflicting_requirements():
     conflict = verdict(
         facts(
             experience_min=2.0,
-            description="2+ years of experience required. Ideally 7+ years of experience in fintech.",
+            description="2+ years of experience required.\nRequirements\n• 7+ years of backend experience",
         )
     )
     assert check(conflict, "EXPERIENCE")["code"] == "EXPERIENCE_CONFLICT" and conflict["verdict"] == "MANUAL_REVIEW"
+    # M3: a preferred figure ("ideally 7+") is kept apart from the requirement, so it is not a conflict.
+    preferred = verdict(
+        facts(
+            experience_min=2.0,
+            description="2+ years of experience required. Ideally 7+ years of experience in fintech.",
+        )
+    )
+    assert check(preferred, "EXPERIENCE")["code"] == "EXPERIENCE_MEETS"
 
 
 def test_seniority_from_title_is_evidenced():
