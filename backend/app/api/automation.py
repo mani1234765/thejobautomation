@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.api.deps import DB, CurrentPrincipal, Principal, get_owned, require_scope
 from app.db import utcnow
+from app.domain import job_filters as jf
 from app.models import AutomationConfig, AutomationExecution
 from app.services import audit
 from app.services import automation as svc
@@ -64,17 +65,36 @@ _ALLOWED_FILTERS = {
 }
 
 
+_INT_FILTERS = {"min_score": 100, "notify_min_score": 100, "max_shortlist": 25, "max_per_run": 25}
+_TEXT_FILTERS = ("locations", "title_keywords")
+
+
 def _clean_filters(kind: str, filters: dict[str, Any]) -> dict[str, Any]:
     bad = set(filters) - _ALLOWED_FILTERS[kind]
     if bad:
         raise HTTPException(400, f"Unknown filters for {kind}: {', '.join(sorted(bad))}")
     out = {**svc.DEFAULT_FILTERS[kind], **filters}
-    for k in ("min_score", "notify_min_score"):
-        if k in out and not (0 <= int(out[k]) <= 100):
-            raise HTTPException(400, f"{k} must be between 0 and 100.")
-    for k in ("max_shortlist", "max_per_run"):
-        if k in out and not (0 <= int(out[k]) <= 25):
-            raise HTTPException(400, f"{k} must be between 0 and 25.")
+    for k, hi in _INT_FILTERS.items():
+        if k not in out:
+            continue
+        v = out[k]
+        if isinstance(v, bool) or not isinstance(v, int | float) or v != int(v):
+            raise HTTPException(400, f"{k} must be a whole number.")
+        if not 0 <= v <= hi:
+            raise HTTPException(400, f"{k} must be between 0 and {hi}.")
+        out[k] = int(v)
+    for k in jf.CHOICES:
+        if k in out:
+            try:
+                out[k] = jf.choices(k, out[k])
+            except jf.InvalidFilter as exc:
+                raise HTTPException(400, str(exc)) from exc
+    for k in _TEXT_FILTERS:
+        if k in out:
+            v = [out[k]] if isinstance(out[k], str) else out[k]
+            if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                raise HTTPException(400, f"{k} must be a list of text values.")
+            out[k] = [x.strip() for x in v if x.strip()]
     return out
 
 

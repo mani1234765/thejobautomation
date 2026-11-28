@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from app.api.deps import DB, CurrentPrincipal, Principal, get_owned, require_scope
+from app.domain import job_filters as jf
 from app.integrations.sources.base import SourceError
 from app.models import Application, Job, JobMatch, JobSource, SavedJob
 from app.services import audit
@@ -119,6 +120,14 @@ def _csv(v: str | None) -> list[str] | None:
     return [x.strip() for x in v.split(",") if x.strip()] if v else None
 
 
+def _choice_csv(name: str, v: str | None) -> list[str] | None:
+    """A comma-separated multiple-choice filter; unknown values are a 422 naming the allowed ones."""
+    try:
+        return jf.choices(name, _csv(v)) or None
+    except jf.InvalidFilter as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/jobs", response_model=JobPage)
 def search_jobs(
     db: DB,
@@ -143,9 +152,9 @@ def search_jobs(
         q=q,
         company=company,
         location=location,
-        work_modes=_csv(work_modes),
-        employment_types=_csv(employment_types),
-        experience_levels=_csv(experience_levels),
+        work_modes=_choice_csv("work_modes", work_modes),
+        employment_types=_choice_csv("employment_types", employment_types),
+        experience_levels=_choice_csv("experience_levels", experience_levels),
         min_salary_lpa=min_salary_lpa,
         skills=_csv(skills),
         posted_within_days=posted_within_days,

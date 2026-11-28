@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import utcnow
 from app.domain import fx
+from app.domain import job_filters as jf
 from app.domain import job_parsing as jp
 from app.domain.matching import SCORING_VERSION, JobFacts, compute_match
 from app.domain.salary_policy import APPRENTICE_DEFAULTS, SalaryFacts
@@ -492,17 +493,6 @@ class JobQuery:
     page_size: int = 25
 
 
-_LEVEL_EXP = {
-    "fresher": (0, 0),
-    "internship": (0, 1),
-    "0-1": (0, 1),
-    "1-2": (1, 2),
-    "2-3": (2, 3),
-    "3-5": (3, 5),
-    "5+": (5, 99),
-}
-
-
 def search(db: Session, user: User, query: JobQuery) -> tuple[list[tuple[Job, JobMatch | None, str | None]], int]:
     ensure_matches(db, user)
     saved_state = (
@@ -530,36 +520,10 @@ def search(db: Session, user: User, query: JobQuery) -> tuple[list[tuple[Job, Jo
         stmt = stmt.where(Company.normalized_name.like(f"%{jp.normalize_company(query.company)}%"))
     if query.location:
         stmt = stmt.where(func.lower(Job.location).like(f"%{query.location.strip().lower()}%"))
-    if query.work_modes:
-        stmt = stmt.where(Job.work_mode.in_(query.work_modes))
-    if query.employment_types:
-        conds = [Job.employment_type.in_(query.employment_types)]
-        if "internship" in query.employment_types:
-            conds.append(Job.is_internship.is_(True))
-        stmt = stmt.where(or_(*conds))
-    if query.experience_levels:
-        conds = []
-        for lv in query.experience_levels:
-            lo, hi = _LEVEL_EXP.get(lv, (0, 99))
-            if lv == "internship":
-                conds.append(Job.is_internship.is_(True))
-            conds.append(
-                and_(
-                    Job.experience_min.is_not(None),
-                    Job.experience_min <= hi,
-                    func.coalesce(Job.experience_max, Job.experience_min + 2) >= lo,
-                )
-            )
-        stmt = stmt.where(or_(*conds))
-    if query.min_salary_lpa is not None:
-        # Undisclosed pay stays visible (it's eligible by default policy); disclosed INR pay must clear the bar.
-        stmt = stmt.where(
-            or_(
-                Job.salary_max.is_(None), Job.salary_currency != "INR", Job.salary_max >= query.min_salary_lpa * 100_000
-            )
-        )
     if query.posted_within_days:
-        stmt = stmt.where(Job.posted_at >= utcnow() - timedelta(days=query.posted_within_days))
+        # A listing without a posting date stays visible ("Not stated"), as for every other filter.
+        cutoff = utcnow() - timedelta(days=query.posted_within_days)
+        stmt = stmt.where(or_(Job.posted_at.is_(None), Job.posted_at >= cutoff))
     if query.min_score is not None:
         stmt = stmt.where(JobMatch.score >= query.min_score)
     if query.state == "saved":
@@ -570,6 +534,15 @@ def search(db: Session, user: User, query: JobQuery) -> tuple[list[tuple[Job, Jo
         stmt = stmt.where(or_(saved_state.is_(None), saved_state != "dismissed"))
 
     rows = list(db.execute(stmt).all())
+    # Listing facts are filtered with the same rules discovery automations use (see domain.job_filters).
+    rows = [
+        r
+        for r in rows
+        if jf.employment_ok(r[0], query.employment_types or [])
+        and jf.work_mode_ok(r[0], query.work_modes or [])
+        and jf.experience_ok(r[0], query.experience_levels or [])
+        and jf.pay_ok(r[0], query.min_salary_lpa)
+    ]
     if query.skills:
         want = {s.lower() for s in query.skills}
         rows = [
@@ -577,10 +550,13 @@ def search(db: Session, user: User, query: JobQuery) -> tuple[list[tuple[Job, Jo
         ]
     if query.eligibility:
         rows = [r for r in rows if r[1] and r[1].eligibility.get("status") == query.eligibility]
+    # The job id breaks ties, so a page holds the same jobs on every request.
     if query.sort == "recent":
-        rows.sort(key=lambda r: r[0].posted_at or r[0].first_seen_at, reverse=True)
+        rows.sort(key=lambda r: (r[0].posted_at or r[0].first_seen_at, r[0].id), reverse=True)
     else:
-        rows.sort(key=lambda r: ((r[1].score if r[1] else -1), r[0].posted_at or r[0].first_seen_at), reverse=True)
+        rows.sort(
+            key=lambda r: ((r[1].score if r[1] else -1), r[0].posted_at or r[0].first_seen_at, r[0].id), reverse=True
+        )
     total = len(rows)
     start = (query.page - 1) * query.page_size
     return [(r[0], r[1], r[2]) for r in rows[start : start + query.page_size]], total

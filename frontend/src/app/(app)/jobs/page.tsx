@@ -14,8 +14,10 @@ import { ScoreRing } from "@/components/ui/score";
 import { EmptyState, ErrorState, ListSkeleton, PageHeader } from "@/components/ui/states";
 import { api } from "@/lib/api";
 import {
-  cn, EMPLOYMENT_LABEL, EXPERIENCE_LEVELS, formatExperience, formatSalary, pluralize, relativeTime, STATUS_META, WORK_MODE_LABEL,
+  cn, EMPLOYMENT_LABEL, EMPLOYMENT_OPTIONS, EXPERIENCE_LEVELS, formatExperience, formatSalary, pluralize, relativeTime, STATUS_META,
+  WORK_MODE_LABEL, WORK_MODE_OPTIONS,
 } from "@/lib/format";
+import { DEFAULT_JOBS_STATE, jobsStateFromParams, jobsStateToParams, notStatedFacts, type JobsUrlState } from "@/lib/job-filters";
 import { keys, useAction, useJobs, type JobFilters } from "@/lib/queries";
 import type { JobCard, JobDetail } from "@/lib/types";
 import { useQueries } from "@tanstack/react-query";
@@ -31,8 +33,8 @@ function useDebounced<T>(value: T, ms = 250) {
   return v;
 }
 
-function JobRow({ job, active, selected, onOpen, onToggleCompare }: {
-  job: JobCard; active: boolean; selected: boolean; onOpen: () => void; onToggleCompare: () => void;
+function JobRow({ job, active, selected, notStated, onOpen, onToggleCompare }: {
+  job: JobCard; active: boolean; selected: boolean; notStated: string[]; onOpen: () => void; onToggleCompare: () => void;
 }) {
   const salary = formatSalary(job);
   const exp = formatExperience(job.experience_min, job.experience_max);
@@ -48,6 +50,7 @@ function JobRow({ job, active, selected, onOpen, onToggleCompare }: {
           <span className="truncate text-[13px] font-medium text-fg">{job.title}</span>
           {job.application_status && <Badge tone="accent">{STATUS_META[job.application_status as keyof typeof STATUS_META]?.label}</Badge>}
           {job.eligibility === "ineligible" && <Badge tone="danger">Outside criteria</Badge>}
+          {notStated.map((n) => <Badge key={n} tone="neutral">{n}</Badge>)}
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-fg-muted">
           <span className="truncate"><span className="font-medium text-fg/80">{job.company}</span>{meta.length ? ` · ${meta.join(" · ")}` : ""}</span>
@@ -81,7 +84,9 @@ function CompareDialog({ ids }: { ids: string[] }) {
   const rows: [string, (j: JobDetail) => React.ReactNode][] = [
     ["Match", (j) => <ScoreRing score={j.match_score} size={32} />],
     ["Company", (j) => j.company],
-    ["Location", (j) => [j.location, j.work_mode && WORK_MODE_LABEL[j.work_mode]].filter(Boolean).join(" · ") || "—"],
+    ["Location", (j) => j.location || "Not stated"],
+    ["Employment type", (j) => (j.is_internship ? "Internship" : j.employment_type ? EMPLOYMENT_LABEL[j.employment_type] ?? j.employment_type : "Not stated")],
+    ["Work mode", (j) => (j.work_mode ? WORK_MODE_LABEL[j.work_mode] : "Not stated")],
     ["Experience", (j) => formatExperience(j.experience_min, j.experience_max) ?? "Not stated"],
     ["Pay", (j) => formatSalary(j) ?? "Not disclosed"],
     ["Eligibility", (j) => <Badge tone={j.eligibility === "eligible" ? "positive" : j.eligibility === "review" ? "warning" : "danger"}>{j.eligibility}</Badge>],
@@ -123,27 +128,28 @@ function JobsInner() {
   const params = useSearchParams();
   const openJob = params.get("job");
   const [sourcesOpen, setSourcesOpen] = useState(params.get("sources") === "1");
-  const [q, setQ] = useState("");
-  const [location, setLocation] = useState("");
-  const [workModes, setWorkModes] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [levels, setLevels] = useState<string[]>([]);
-  const [minSalary, setMinSalary] = useState<string>("");
-  const [posted, setPosted] = useState<string>("");
-  const [minScore, setMinScore] = useState<string>("");
-  const [eligibility, setEligibility] = useState<string>("");
-  const [state, setState] = useState<"active" | "saved" | "dismissed">("active");
-  const [sort, setSort] = useState<"match" | "recent">("match");
-  const [paging, setPaging] = useState({ key: "", page: 1 });
+  // Filters live in the URL (replaced, not pushed), so a refresh or a shared link keeps them.
+  const [f, setFilters] = useState<JobsUrlState>(() => jobsStateFromParams(new URLSearchParams(params.toString())));
+  const set = <K extends keyof JobsUrlState>(k: K) => (v: JobsUrlState[K]) =>
+    setFilters((prev) => ({ ...prev, [k]: v, page: k === "page" ? (v as number) : 1 })); // any filter change → page 1
+  const { q, location, work_modes: workModes, employment_types: types, experience_levels: levels, min_salary: minSalary,
+    posted, min_score: minScore, eligibility, state, sort, page } = f;
+  const [setQ, setLocation, setWorkModes, setTypes, setLevels, setMinSalary, setPosted, setMinScore, setEligibility, setState, setSort] = [
+    set("q"), set("location"), set("work_modes"), set("employment_types"), set("experience_levels"), set("min_salary"), set("posted"),
+    set("min_score"), set("eligibility"), set("state"), set("sort"),
+  ];
   const [compare, setCompare] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
 
   const debouncedQ = useDebounced(q);
   const debouncedLoc = useDebounced(location);
-  // Any filter change resets to page 1 (derived, not synced through an effect).
-  const filterKey = JSON.stringify([debouncedQ, debouncedLoc, workModes, types, levels, minSalary, posted, minScore, eligibility, state, sort]);
-  const page = paging.key === filterKey ? paging.page : 1;
-  const setPage = (f: (p: number) => number) => setPaging({ key: filterKey, page: f(page) });
+  const setPage = (fn: (p: number) => number) => set("page")(fn(page));
+  useEffect(() => {
+    const next = jobsStateToParams({ ...f, q: debouncedQ, location: debouncedLoc }, new URLSearchParams(window.location.search));
+    if (next.toString() !== window.location.search.replace(/^\?/, "")) {
+      router.replace(`${pathname}${next.toString() ? `?${next}` : ""}`, { scroll: false });
+    }
+  }, [f, debouncedQ, debouncedLoc, pathname, router]);
   const filters: JobFilters = useMemo(() => ({
     q: debouncedQ || undefined, location: debouncedLoc || undefined, work_modes: workModes, employment_types: types,
     experience_levels: levels, min_salary_lpa: minSalary ? Number(minSalary) : undefined,
@@ -163,9 +169,7 @@ function JobsInner() {
   };
   const toggleCompare = (id: string) =>
     setCompare((c) => (c.includes(id) ? c.filter((x) => x !== id) : c.length >= 4 ? c : [...c, id]));
-  const clearAll = () => {
-    setQ(""); setLocation(""); setWorkModes([]); setTypes([]); setLevels([]); setMinSalary(""); setPosted(""); setMinScore(""); setEligibility("");
-  };
+  const clearAll = () => setFilters((prev) => ({ ...DEFAULT_JOBS_STATE, state: prev.state, sort: prev.sort }));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -231,11 +235,9 @@ function JobsInner() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <ChipGroup ariaLabel="Work mode" value={workModes} onChange={setWorkModes}
-            options={[{ value: "remote", label: "Remote" }, { value: "hybrid", label: "Hybrid" }, { value: "onsite", label: "On-site" }]} />
+          <ChipGroup ariaLabel="Work mode" value={workModes} onChange={setWorkModes} options={WORK_MODE_OPTIONS} />
           <span className="hidden h-4 w-px bg-border sm:block" />
-          <ChipGroup ariaLabel="Employment type" value={types} onChange={setTypes}
-            options={[{ value: "full_time", label: "Full-time" }, { value: "internship", label: "Internship" }, { value: "contract", label: "Contract" }]} />
+          <ChipGroup ariaLabel="Employment type" value={types} onChange={setTypes} options={EMPLOYMENT_OPTIONS} />
           {anyFilter && <Button variant="ghost" size="sm" onClick={clearAll}><X /> Clear</Button>}
           <Segmented ariaLabel="List" value={state} onChange={setState} className="ml-auto"
             options={[{ value: "active", label: "All" }, { value: "saved", label: "Saved" }, { value: "dismissed", label: "Dismissed" }]} />
@@ -254,7 +256,7 @@ function JobsInner() {
         ) : (
           <ul className="divide-y divide-border">
             {data.items.map((j) => (
-              <JobRow key={j.id} job={j} active={openJob === j.id} selected={compare.includes(j.id)}
+              <JobRow key={j.id} job={j} active={openJob === j.id} selected={compare.includes(j.id)} notStated={notStatedFacts(j, f)}
                 onOpen={() => setJob(j.id)} onToggleCompare={() => toggleCompare(j.id)} />
             ))}
           </ul>

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
+from app.domain import job_filters as jf
 from app.models import Application, AutomationConfig, AutomationExecution, Job, JobMatch, JobSource, User
 from app.services import applications as app_svc
 from app.services import audit
@@ -45,17 +46,33 @@ class ExecutionLog:
         self.execution.log = list(self.lines)
 
 
-def _passes(job: Job, f: dict[str, Any]) -> bool:
-    if f.get("work_modes") and job.work_mode not in f["work_modes"]:
+def _listing_filters(f: dict[str, Any], log: ExecutionLog) -> dict[str, list[str]] | None:
+    """The saved multiple-choice filters, read without failing on older or hand-made values: a single string
+    counts as one value; unrecognised values are logged and ignored. None when a filter was set but none of its
+    values is recognised: it then matches no job, as it did before, rather than silently matching every job."""
+    out = {}
+    for name in jf.CHOICES:
+        known, unknown = jf.stored_choices(name, f.get(name))
+        if unknown:
+            log("warn", "filter_values_ignored", filter=name, values=unknown)
+        if unknown and not known:
+            return None
+        out[name] = known
+    return out
+
+
+def _passes(job: Job, f: dict[str, Any], listing: dict[str, list[str]]) -> bool:
+    """Same listing rules as job search: an unstated employment type, work mode or experience is included."""
+    if not (
+        jf.employment_ok(job, listing["employment_types"])
+        and jf.work_mode_ok(job, listing["work_modes"])
+        and jf.experience_ok(job, listing["experience_levels"])
+    ):
         return False
     if f.get("locations"):
         wanted = [loc.lower() for loc in f["locations"]]
         remote_ok = job.work_mode == "remote" and "remote" in wanted
         if not remote_ok and not any(loc in (job.location or "").lower() for loc in wanted):
-            return False
-    if f.get("employment_types"):
-        et = "internship" if job.is_internship else job.employment_type
-        if et not in f["employment_types"]:
             return False
     return not f.get("title_keywords") or any(k.lower() in job.title.lower() for k in f["title_keywords"])
 
@@ -89,10 +106,16 @@ def run_discovery(db: Session, user: User, cfg: AutomationConfig | None, log: Ex
         .where(Job.first_seen_at >= started - timedelta(seconds=5), Job.duplicate_of_id.is_(None))
         .order_by(JobMatch.score.desc())
     ).all()
+    listing = _listing_filters(f, log)
+    if listing is None:
+        log("warn", "filters_match_nothing", message="A saved filter has no recognised values; edit the automation.")
     strong = [
         (j, m)
         for j, m in new
-        if m.score >= f["notify_min_score"] and m.eligibility.get("status") != "ineligible" and _passes(j, f)
+        if listing is not None
+        and m.score >= f["notify_min_score"]
+        and m.eligibility.get("status") != "ineligible"
+        and _passes(j, f, listing)
     ]
     stats["strong_matches"] = len(strong)
     if strong:

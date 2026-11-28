@@ -8,7 +8,8 @@ import { ConfirmDialog, Dialog, DialogContent, Tooltip } from "@/components/ui/o
 import { Badge, Card, CardHeader, Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { Callout, EmptyState, ErrorState, ListSkeleton, PageHeader } from "@/components/ui/states";
 import { api } from "@/lib/api";
-import { cn, formatDateTime, relativeTime } from "@/lib/format";
+import { cn, EMPLOYMENT_OPTIONS, EXPERIENCE_LEVELS, formatDateTime, relativeTime, WORK_MODE_OPTIONS } from "@/lib/format";
+import { choiceValues, FILTER_CHOICES, unrecognisedFilterValues, type ChoiceFilter } from "@/lib/job-filters";
 import { keys, useAction, useAutomations, useExecutions, useSettings } from "@/lib/queries";
 import type { AutomationConfig, AutomationExecution } from "@/lib/types";
 
@@ -16,6 +17,7 @@ const INTERVALS = [
   { value: 60, label: "Every hour" }, { value: 180, label: "Every 3 hours" }, { value: 360, label: "Every 6 hours" },
   { value: 720, label: "Twice a day" }, { value: 1440, label: "Daily" },
 ];
+const FILTER_LABEL: Record<ChoiceFilter, string> = { employment_types: "Employment types", work_modes: "Work modes", experience_levels: "Experience" };
 const intervalLabel = (m: number) => INTERVALS.find((i) => i.value === m)?.label ?? `Every ${m} min`;
 
 type Draft = { id?: string; name: string; kind: "discovery" | "preparation"; interval_minutes: number; filters: Record<string, unknown> };
@@ -24,7 +26,15 @@ function ConfigDialog({ draft, onClose }: { draft: Draft; onClose: () => void })
   const [d, setD] = useState<Draft>(draft);
   const f = d.filters as Record<string, never>;
   const setF = (k: string, v: unknown) => setD({ ...d, filters: { ...d.filters, [k]: v } });
-  const save = useAction(() => (d.id ? api.put(`/automations/${d.id}`, d) : api.post("/automations", d)), {
+  // Values saved by an older version or another client that JobPilot doesn't offer; saving removes them.
+  const [unrecognised] = useState(() => (draft.kind === "discovery" ? unrecognisedFilterValues(draft.filters) : {}));
+  const body = () => {
+    if (d.kind !== "discovery") return d;
+    const filters = { ...d.filters };
+    for (const k of Object.keys(FILTER_CHOICES) as ChoiceFilter[]) if (k in filters) filters[k] = choiceValues(filters, k);
+    return { ...d, filters };
+  };
+  const save = useAction(() => (d.id ? api.put(`/automations/${d.id}`, body()) : api.post("/automations", body())), {
     invalidate: [keys.automations], success: d.id ? "Automation updated" : "Automation created", onSuccess: onClose,
   });
   return (
@@ -47,8 +57,16 @@ function ConfigDialog({ draft, onClose }: { draft: Draft; onClose: () => void })
             </div>
             <Field label="Only titles containing" hint="Leave empty to use every role from your boards."><TagInput value={(f.title_keywords as string[]) ?? []} onChange={(v) => setF("title_keywords", v)} placeholder="backend, platform…" /></Field>
             <Field label="Locations" hint="Add “Remote” to include remote roles anywhere."><TagInput value={(f.locations as string[]) ?? []} onChange={(v) => setF("locations", v)} placeholder="Bengaluru, Remote…" /></Field>
-            <Field label="Work modes"><ChipGroup ariaLabel="Work modes" value={(f.work_modes as string[]) ?? []} onChange={(v) => setF("work_modes", v)} options={[{ value: "remote", label: "Remote" }, { value: "hybrid", label: "Hybrid" }, { value: "onsite", label: "On-site" }]} /></Field>
-            <Field label="Employment types"><ChipGroup ariaLabel="Employment types" value={(f.employment_types as string[]) ?? []} onChange={(v) => setF("employment_types", v)} options={[{ value: "full_time", label: "Full-time" }, { value: "internship", label: "Internship" }, { value: "contract", label: "Contract" }]} /></Field>
+            <Field label="Work modes"><ChipGroup ariaLabel="Work modes" value={choiceValues(f, "work_modes")} onChange={(v) => setF("work_modes", v)} options={WORK_MODE_OPTIONS} /></Field>
+            <Field label="Employment types"><ChipGroup ariaLabel="Employment types" value={choiceValues(f, "employment_types")} onChange={(v) => setF("employment_types", v)} options={EMPLOYMENT_OPTIONS} /></Field>
+            <Field label="Experience"><ChipGroup ariaLabel="Experience" value={choiceValues(f, "experience_levels")} onChange={(v) => setF("experience_levels", v)} options={EXPERIENCE_LEVELS} /></Field>
+            <p className="text-xs text-fg-muted">Leave a group empty to include every job. Jobs whose listing doesn&apos;t state the work mode, employment type or experience are included, as on Discover Jobs. Jobs outside your eligibility policy are never shortlisted.</p>
+            {Object.keys(unrecognised).length > 0 && (
+              <Callout tone="warning" title="Some saved filter values aren't recognised">
+                <ul className="list-disc pl-4">{Object.entries(unrecognised).map(([k, v]) => <li key={k}>{FILTER_LABEL[k as ChoiceFilter]}: {v!.join(", ")}</li>)}</ul>
+                <p className="mt-1">Until you save, a group with only unrecognised values matches no jobs. Saving removes them; a group left empty then includes every job.</p>
+              </Callout>
+            )}
           </>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">

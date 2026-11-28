@@ -93,6 +93,7 @@ export function scoreTone(score: number | null | undefined): Tone {
 }
 
 export const WORK_MODE_LABEL: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
+export const WORK_MODE_OPTIONS = Object.entries(WORK_MODE_LABEL).map(([value, label]) => ({ value, label }));
 export const EMPLOYMENT_LABEL: Record<string, string> = {
   full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship",
   freelance: "Freelance", temporary: "Temporary", apprenticeship: "Apprenticeship",

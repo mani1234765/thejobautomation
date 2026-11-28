@@ -175,6 +175,51 @@ async function openShell(path: string) {
   await expect(page.getByRole("button", { name: "Open command menu" }).first()).toBeVisible();
 }
 
+const SEVEN_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Freelance", "Temporary", "Apprenticeship"];
+
+test("job filters offer all seven employment types and survive a reload", async () => {
+  await page.goto("/jobs");
+  const types = page.getByRole("group", { name: "Employment type" });
+  await expect(types.getByRole("button")).toHaveText(SEVEN_TYPES);
+  await types.getByRole("button", { name: "Apprenticeship" }).click();
+  await types.getByRole("button", { name: "Freelance" }).click();
+  await expect(page).toHaveURL(/employment_types=apprenticeship(%2C|,)freelance/);
+  await page.reload();
+  await expect(types.getByRole("button", { name: "Apprenticeship" })).toHaveAttribute("aria-pressed", "true");
+  await expect(types.getByRole("button", { name: "Freelance" })).toHaveAttribute("aria-pressed", "true");
+  await expect(types.getByRole("button", { name: "Full-time" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText(/from 1 followed board/)).toBeVisible(); // the filtered request succeeded
+  await axe(page);
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(page).not.toHaveURL(/employment_types/);
+});
+
+test("automation filters offer the same seven types and keep saved choices", async () => {
+  await page.goto("/automation");
+  await page.getByRole("button", { name: "Discovery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const types = dialog.getByRole("group", { name: "Employment types" });
+  await expect(types.getByRole("button")).toHaveText(SEVEN_TYPES);
+  await types.getByRole("button", { name: "Apprenticeship" }).click();
+  await types.getByRole("button", { name: "Temporary" }).click();
+  await dialog.getByRole("group", { name: "Experience" }).getByRole("button", { name: "3–5 yrs" }).click();
+  await dialog.getByLabel("Name", { exact: true }).fill("E2E discovery");
+  await axe(page);
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toBeHidden();
+  await page.getByRole("button", { name: /E2E discovery/ }).click();
+  const edit = page.getByRole("dialog");
+  const saved = edit.getByRole("group", { name: "Employment types" });
+  for (const t of ["Apprenticeship", "Temporary"]) await expect(saved.getByRole("button", { name: t })).toHaveAttribute("aria-pressed", "true");
+  await expect(saved.getByRole("button", { name: "Full-time" })).toHaveAttribute("aria-pressed", "false");
+  await expect(edit.getByRole("group", { name: "Experience" }).getByRole("button", { name: "3–5 yrs" })).toHaveAttribute("aria-pressed", "true");
+  await expect(edit.getByLabel("Shortlist at score ≥")).toHaveValue("70"); // other settings kept
+  await edit.getByRole("button", { name: "Cancel" }).click();
+  // Pause it: this journey's account never needs a scheduled run.
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByText("paused", { exact: true })).toBeVisible();
+});
+
 test("command menu opens with ⌘K and Ctrl+K, and closes with Escape", async () => {
   await openShell("/overview");
   const input = page.getByPlaceholder("Search pages and actions…");
